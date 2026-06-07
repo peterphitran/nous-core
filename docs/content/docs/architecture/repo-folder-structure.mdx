@@ -404,10 +404,11 @@ Router does not execute models directly.
 
 ### providers/
 
-Model provider adapters for all model types.
+Model provider adapters and metadata definitions for all model types.
 
 ```
 providers/
+├── definitions/                      # Static provider metadata catalog
 ├── local/                            # Local runtime models
 ├── remote/                           # Remote API models
 └── wasm/                             # WASM models
@@ -421,6 +422,8 @@ Responsibilities:
 * Provide streaming support for text models
 * Report token/compute usage
 * Abstract provider-specific differences
+
+Phase 1.1 adds the static typed provider definition catalog in `self/subcortex/providers/src/definitions/`. The catalog contains metadata-only definitions for Anthropic, Chat Completions-compatible remote providers, and Ollama, and exports literal-derived provider key types. Runtime bootstrap and credential loading still use the current provider-registration paths until WR-177 Phase 1.3 consumes the catalog.
 
 Phase 12.5 adds in-process per-endpoint inference lanes in `self/subcortex/providers/src/inference-lane.ts`, `inference-lane-registry.ts`, and `lane-aware-provider.ts`. These files own bounded concurrency, agent-class priority ordering, Principal-only preemption, exclusive voice-call lease handling, wait-estimate analytics, and the narrow lease-release notification seam while preserving existing routing and failover authority above the concrete providers.
 
