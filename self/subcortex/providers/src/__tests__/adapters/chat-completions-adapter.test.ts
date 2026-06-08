@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenAiAdapter } from '../../../agent-gateway/adapters/openai-adapter.js';
+import { createChatCompletionsAdapter } from '../../adapters/chat-completions-adapter.js';
 import type { TraceId, ToolDefinition } from '@nous/shared';
 
 const TRACE_ID = '550e8400-e29b-41d4-a716-446655440103' as TraceId;
 
-describe('createOpenAiAdapter', () => {
-  const adapter = createOpenAiAdapter();
+describe('createChatCompletionsAdapter', () => {
+  const adapter = createChatCompletionsAdapter();
 
   describe('capabilities', () => {
     it('has nativeToolUse true, others false', () => {
@@ -17,7 +17,7 @@ describe('createOpenAiAdapter', () => {
   });
 
   describe('formatRequest', () => {
-    it('maps tools to OpenAI format with type: function wrapper', () => {
+    it('maps tools to Chat Completions format with type: function wrapper', () => {
       const tools: ToolDefinition[] = [
         {
           name: 'test_tool',
@@ -101,7 +101,7 @@ describe('createOpenAiAdapter', () => {
       });
     });
 
-    it('SP 1.15 RC-3 — includes `name` on tool result message when frame.name is set', () => {
+    it('includes `name` on tool result message when frame.name is set', () => {
       const result = adapter.formatRequest({
         systemPrompt: 'test',
         context: [
@@ -125,7 +125,7 @@ describe('createOpenAiAdapter', () => {
       });
     });
 
-    it('SP 1.15 RC-3 — backwards-compat regression: omits `name` when frame.name is undefined', () => {
+    it('omits `name` when frame.name is undefined', () => {
       const result = adapter.formatRequest({
         systemPrompt: 'test',
         context: [
@@ -345,10 +345,10 @@ describe('createOpenAiAdapter', () => {
   describe('parseResponse', () => {
     it('handles choices[].message.content response', () => {
       const output = {
-        choices: [{ message: { content: 'Hello from OpenAI' } }],
+        choices: [{ message: { content: 'Hello from Chat Completions' } }],
       };
       const result = adapter.parseResponse(output, TRACE_ID);
-      expect(result.response).toBe('Hello from OpenAI');
+      expect(result.response).toBe('Hello from Chat Completions');
       expect(result.toolCalls).toEqual([]);
     });
 

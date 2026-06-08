@@ -1,6 +1,12 @@
 import type { ILogChannel, TraceId } from '@nous/shared';
-import { parseModelOutput, type ParsedModelOutput } from '../../output-parser.js';
-import type { AdapterCapabilities, AdapterFormatInput, AdapterFormattedRequest, ProviderAdapter } from './types.js';
+import { parseModelOutput, type ParsedModelOutput } from './output.js';
+import {
+  defineProviderAdapter,
+  type AdapterCapabilities,
+  type AdapterFormatInput,
+  type AdapterFormattedRequest,
+  type ProviderAdapter,
+} from './types.js';
 
 const TEXT_ADAPTER_CAPABILITIES: AdapterCapabilities = {
   nativeToolUse: false,
@@ -44,3 +50,13 @@ export function createTextAdapter(log?: ILogChannel): ProviderAdapter {
     },
   };
 }
+
+export const textAdapter = defineProviderAdapter({
+  adapterKey: 'text',
+  displayName: 'Text Fallback',
+  protocol: 'text-fallback',
+  capabilities: TEXT_ADAPTER_CAPABILITIES,
+  create(options) {
+    return createTextAdapter(options?.log);
+  },
+});

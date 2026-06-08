@@ -1,15 +1,15 @@
 /**
- * formatTools defensive injection — WR-148 phase 1.1 / T5b
+ * formatTools defensive injection.
  *
  * Tier 2 behavior test: validates that the Anthropic adapter's formatTools
  * function defensively injects `type: "object"` for tools with missing type
  * fields, logs when injection occurs, and does not mutate original schemas.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { createAnthropicAdapter } from '../../../agent-gateway/adapters/anthropic-adapter.js';
+import { createAnthropicAdapter } from '../../adapters/anthropic-adapter.js';
 import type { ToolDefinition, GatewayContextFrame, ILogChannel } from '@nous/shared';
 
-function createMockLog(): ILogChannel & { info: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> } {
+function createMockLog(): ILogChannel {
   return {
     debug: vi.fn(),
     info: vi.fn(),
@@ -58,7 +58,7 @@ function formatToolsViaAdapter(
   }>;
 }
 
-describe('formatTools defensive injection (WR-148 phase 1.1)', () => {
+describe('formatTools defensive injection', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });

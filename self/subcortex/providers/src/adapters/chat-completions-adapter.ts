@@ -1,17 +1,23 @@
 import type { TraceId } from '@nous/shared';
-import type { ParsedModelOutput } from '../../output-parser.js';
-import type { AdapterCapabilities, AdapterFormatInput, AdapterFormattedRequest, ProviderAdapter } from './types.js';
+import type { ParsedModelOutput } from './output.js';
+import {
+  defineProviderAdapter,
+  type AdapterCapabilities,
+  type AdapterFormatInput,
+  type AdapterFormattedRequest,
+  type ProviderAdapter,
+} from './types.js';
 
-const OPENAI_ADAPTER_CAPABILITIES: AdapterCapabilities = {
+const CHAT_COMPLETIONS_ADAPTER_CAPABILITIES: AdapterCapabilities = {
   nativeToolUse: true,
   cacheControl: false,
   extendedThinking: false,
   streaming: false,
 };
 
-export function createOpenAiAdapter(): ProviderAdapter {
+export function createChatCompletionsAdapter(): ProviderAdapter {
   return {
-    capabilities: OPENAI_ADAPTER_CAPABILITIES,
+    capabilities: CHAT_COMPLETIONS_ADAPTER_CAPABILITIES,
     formatRequest(input: AdapterFormatInput): AdapterFormattedRequest {
       const systemPrompt = Array.isArray(input.systemPrompt)
         ? input.systemPrompt.join('\n\n')
@@ -38,9 +44,8 @@ export function createOpenAiAdapter(): ProviderAdapter {
             };
           }
           // Tool result with tool_call_id metadata → OpenAI tool result message
-          // SP 1.15 RC-3 — symmetric with ollama-adapter; `name` is included
-          // when the frame carries it so the model can recognize which tool
-          // returned the result.
+          // Include `name` when present so the model can recognize which tool
+          // returned this result.
           if (frame.role === 'tool' && frame.metadata?.tool_call_id) {
             return {
               role: 'tool' as const,
@@ -70,10 +75,8 @@ export function createOpenAiAdapter(): ProviderAdapter {
         }));
       }
 
-      // ModelRequirements currently has profile + fallbackPolicy only.
-      // Extended model parameters (maxTokens, temperature) will be available
-      // when ModelRequirements is extended in a future sub-phase.
-      // For now, pass through the profile as metadata.
+      // ModelRequirements currently has profile + fallbackPolicy only. Pass the
+      // profile through as metadata until richer model parameters are available.
       if (input.modelRequirements) {
         result.model_profile = input.modelRequirements.profile;
       }
@@ -82,7 +85,7 @@ export function createOpenAiAdapter(): ProviderAdapter {
     },
     parseResponse(output: unknown, _traceId: TraceId): ParsedModelOutput {
       try {
-        return parseOpenAiResponse(output);
+        return parseChatCompletionsResponse(output);
       } catch {
         // Fallback to text-mode — never throw
         return {
@@ -96,7 +99,7 @@ export function createOpenAiAdapter(): ProviderAdapter {
   };
 }
 
-function parseOpenAiResponse(output: unknown): ParsedModelOutput {
+function parseChatCompletionsResponse(output: unknown): ParsedModelOutput {
   if (typeof output !== 'object' || output === null) {
     return {
       response: String(output ?? ''),
@@ -116,7 +119,7 @@ function parseOpenAiResponse(output: unknown): ParsedModelOutput {
     if (message && typeof message === 'object') {
       const msg = message as Record<string, unknown>;
       const content = typeof msg.content === 'string' ? msg.content : '';
-      const toolCalls = parseOpenAiToolCalls(msg.tool_calls);
+      const toolCalls = parseChatCompletionsToolCalls(msg.tool_calls);
       return {
         response: content,
         toolCalls,
@@ -129,7 +132,7 @@ function parseOpenAiResponse(output: unknown): ParsedModelOutput {
   // Handle direct message shape
   if ('content' in obj || 'tool_calls' in obj) {
     const content = typeof obj.content === 'string' ? obj.content : '';
-    const toolCalls = parseOpenAiToolCalls(obj.tool_calls);
+    const toolCalls = parseChatCompletionsToolCalls(obj.tool_calls);
     return {
       response: content,
       toolCalls,
@@ -156,7 +159,7 @@ function parseOpenAiResponse(output: unknown): ParsedModelOutput {
   };
 }
 
-function parseOpenAiToolCalls(
+function parseChatCompletionsToolCalls(
   toolCalls: unknown,
 ): Array<{ name: string; params: unknown; id?: string }> {
   if (!Array.isArray(toolCalls)) return [];
@@ -179,3 +182,13 @@ function parseOpenAiToolCalls(
   }
   return result;
 }
+
+export const chatCompletionsAdapter = defineProviderAdapter({
+  adapterKey: 'chat-completions',
+  displayName: 'Chat Completions',
+  protocol: 'chat-completions',
+  capabilities: CHAT_COMPLETIONS_ADAPTER_CAPABILITIES,
+  create() {
+    return createChatCompletionsAdapter();
+  },
+});

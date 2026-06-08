@@ -2,6 +2,7 @@
  * @nous/subcortex-providers — Model provider adapters for Nous-OSS.
  */
 export { AnthropicProvider } from './anthropic-provider.js';
+export * from './adapters/index.js';
 export * from './definitions/index.js';
 export { OllamaProvider } from './ollama-provider.js';
 export { ChatCompletionsProvider } from './chat-completions-provider.js';
