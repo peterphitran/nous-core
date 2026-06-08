@@ -659,6 +659,9 @@ importers:
       '@nous/shared':
         specifier: workspace:*
         version: link:../../shared
+      '@nous/subcortex-providers':
+        specifier: workspace:*
+        version: link:../../subcortex/providers
       '@nous/subcortex-workflows':
         specifier: workspace:*
         version: link:../../subcortex/workflows
@@ -684,9 +687,6 @@ importers:
       '@nous/subcortex-projects':
         specifier: workspace:*
         version: link:../../subcortex/projects
-      '@nous/subcortex-providers':
-        specifier: workspace:*
-        version: link:../../subcortex/providers
       '@nous/subcortex-router':
         specifier: workspace:*
         version: link:../../subcortex/router
