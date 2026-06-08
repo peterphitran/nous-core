@@ -7,7 +7,7 @@ description: Contributor contract for provider metadata definitions
 
 Provider definitions live in `self/subcortex/providers/src/definitions/`. They describe provider metadata in a static typed catalog so contributors can add provider identity, protocol, default endpoint, default model, credential metadata, locality, and capability hints without touching runtime construction logic first.
 
-The Phase 1.1 catalog covers the current provider roster:
+The current catalog covers the provider roster:
 
 | Definition | Vendor key | Protocol |
 |------------|------------|----------|
@@ -52,8 +52,23 @@ Definition leaf files are metadata only. They should not:
 - perform network calls, or
 - contain provider-specific bootstrap branches.
 
-Runtime behavior remains in the concrete provider classes and registry paths. Adding a new production provider still requires explicit review of adapter behavior, credential handling, tests, and bootstrap consumption in the appropriate WR-177 sub-phase.
+Runtime behavior remains in the concrete provider classes and registry paths. Adding a new production provider still requires explicit review of adapter behavior, credential handling, tests, and bootstrap consumption before it lands.
+
+## Adapter Modules
+
+Provider adapter behavior lives in `self/subcortex/providers/src/adapters/`. Adapter modules use `defineProviderAdapter(...)` and expose `adapterKey`, `displayName`, `protocol`, `capabilities`, and `create(options?)`.
+
+Current adapter keys are:
+
+| Adapter module | Adapter key | Protocol |
+|----------------|-------------|----------|
+| `anthropic-adapter.ts` | `anthropic` | `anthropic-messages` |
+| `chat-completions-adapter.ts` | `chat-completions` | `chat-completions` |
+| `ollama-adapter.ts` | `ollama` | `ollama` |
+| `text-adapter.ts` | `text` | `text-fallback` |
+
+`openai` remains a provider vendor key for the current Chat Completions-backed definition, but it resolves to the canonical `chat-completions` adapter key.
 
 ## Current Boundaries
 
-Phase 1.1 adds the static catalog and the clean-break rename to `ChatCompletionsProvider`. It does not make bootstrap or credential loading registry-driven yet. Adapter module relocation is planned for WR-177 Phase 1.2, and registry-derived bootstrap and credential consumption are planned for WR-177 Phase 1.3.
+The provider definition catalog and adapter module registry are now provider-package owned. Bootstrap and credential loading are not registry-driven yet; registry-derived bootstrap and credential consumption remain planned follow-up work.
