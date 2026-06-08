@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createAnthropicAdapter } from '../../../agent-gateway/adapters/anthropic-adapter.js';
-import type { AdapterFormatInput } from '../../../agent-gateway/adapters/types.js';
+import { createAnthropicAdapter } from '../../adapters/anthropic-adapter.js';
+import type { AdapterFormatInput } from '../../adapters/types.js';
 
 describe('createAnthropicAdapter', () => {
   const adapter = createAnthropicAdapter();
@@ -55,8 +55,12 @@ describe('createAnthropicAdapter', () => {
         toolDefinitions: [
           {
             name: 'search',
+            version: '1.0.0',
             description: 'Search for files',
             inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+            outputSchema: {},
+            capabilities: ['read'],
+            permissionScope: 'project',
           },
         ],
       };
@@ -84,7 +88,7 @@ describe('createAnthropicAdapter', () => {
         systemPrompt: 'test',
         context: [
           { role: 'user', content: 'Hello', source: 'initial_context', createdAt: '2026-01-01T00:00:00Z' },
-          { role: 'assistant', content: 'Hi there', source: 'model_response', createdAt: '2026-01-01T00:00:01Z' },
+          { role: 'assistant', content: 'Hi there', source: 'model_output', createdAt: '2026-01-01T00:00:01Z' },
           { role: 'tool', content: 'Tool result', source: 'tool_result', createdAt: '2026-01-01T00:00:02Z' },
         ],
       };
@@ -109,7 +113,7 @@ describe('createAnthropicAdapter', () => {
           {
             role: 'assistant',
             content: 'Let me check the weather.',
-            source: 'model_response',
+            source: 'model_output',
             createdAt: '2026-01-01T00:00:01Z',
             metadata: {
               tool_calls: [
@@ -127,7 +131,7 @@ describe('createAnthropicAdapter', () => {
           {
             role: 'assistant',
             content: 'The weather in NYC is 72°F and sunny.',
-            source: 'model_response',
+            source: 'model_output',
             createdAt: '2026-01-01T00:00:03Z',
           },
         ],
@@ -173,7 +177,7 @@ describe('createAnthropicAdapter', () => {
       const input: AdapterFormatInput = {
         systemPrompt: 'test',
         context: [],
-        modelRequirements: { profile: 'fast' },
+        modelRequirements: { profile: 'fast', fallbackPolicy: 'block_if_unmet' },
       };
       const result = adapter.formatRequest(input);
       expect(result.input.model_profile).toBe('fast');

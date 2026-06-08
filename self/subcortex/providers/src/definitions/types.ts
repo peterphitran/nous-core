@@ -22,6 +22,7 @@ export type ProviderAdapterKey =
   | 'anthropic'
   | 'chat-completions'
   | 'ollama'
+  | 'text'
   | (string & {});
 
 export const ProviderCredentialPurposeSchema = z.literal('api_key');

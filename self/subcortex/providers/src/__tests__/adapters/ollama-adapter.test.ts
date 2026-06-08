@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createOllamaAdapter,
   isToolCapableModel,
-} from '../../../agent-gateway/adapters/ollama-adapter.js';
+} from '../../adapters/ollama-adapter.js';
 import type { TraceId, ToolDefinition, GatewayContextFrame } from '@nous/shared';
 
 const TRACE_ID = '550e8400-e29b-41d4-a716-446655440200' as TraceId;
@@ -242,7 +242,7 @@ describe('createOllamaAdapter', () => {
       expect(messages[1]).toEqual({ role: 'user', content: 'tool output' });
     });
 
-    it('SP 1.15 RC-3 — includes `name` on tool result message when frame.name is set', () => {
+    it('includes `name` on tool result message when frame.name is set', () => {
       const adapter = createOllamaAdapter('gemma4:12b');
       const result = adapter.formatRequest({
         systemPrompt: 'prompt',
@@ -267,7 +267,7 @@ describe('createOllamaAdapter', () => {
       });
     });
 
-    it('SP 1.15 RC-3 — backwards-compat regression: omits `name` when frame.name is undefined', () => {
+    it('omits `name` when frame.name is undefined', () => {
       const adapter = createOllamaAdapter('gemma4:12b');
       const result = adapter.formatRequest({
         systemPrompt: 'prompt',
@@ -397,9 +397,7 @@ describe('createOllamaAdapter', () => {
       });
     });
 
-    it('BT R4 RC-1 regression — arguments passed as object (Ollama /api/chat wire format)', () => {
-      // Regression test for BT R4 RC-1 (WR-159 phase 1.12).
-      //
+    it('passes arguments as object for the Ollama /api/chat wire format', () => {
       // Ollama's NATIVE /api/chat endpoint decodes tool_calls[].function.arguments
       // via the Go ToolCallFunctionArguments.UnmarshalJSON which expects a JSON
       // OBJECT (orderedmap-backed map[string]any), NOT a JSON-string-of-an-object.
@@ -409,7 +407,7 @@ describe('createOllamaAdapter', () => {
       // Pre-fix, ollama-adapter.ts:269 wrapped tc.input in JSON.stringify, which
       // produced a string-shaped value Ollama's parser rejected with HTTP 400
       // "Value looks like object, but can't find closing '}' symbol".
-      // BT R4 turn 3 evidence: .worklog/sprints/feat/chat-experience-quality/phase-1/behavioral-testing/round-4.mdx
+      // Regression evidence came from a real Ollama /api/chat 400 response.
       //
       // Positive assertion: arguments deep-equals the expected object.
       // Negative assertion: arguments is NOT a string. The negative assertion
@@ -713,7 +711,7 @@ describe('Ollama adapter regression — text-listed fallback', () => {
   });
 });
 
-describe('createOllamaAdapter — formatRequest sets result.think (SP 1.16 RC-α / α7)', () => {
+describe('createOllamaAdapter — formatRequest sets result.think', () => {
   it('sets result.think === true when extendedThinking capability is true (tool-bearing turn)', () => {
     const adapter = createOllamaAdapter('llama3.2:3b');
     expect(adapter.capabilities.extendedThinking).toBe(true);

@@ -1,15 +1,16 @@
 /**
  * Anthropic provider adapter — native tool-use, cache boundaries, extended thinking.
  *
- * WR-127 Phase 1.3 — first production ProviderAdapter for the Anthropic Messages API.
+ * ProviderAdapter for the Anthropic Messages API.
  */
 import type { ILogChannel, TraceId } from '@nous/shared';
-import type { ParsedModelOutput } from '../../output-parser.js';
-import type {
-  AdapterCapabilities,
-  AdapterFormatInput,
-  AdapterFormattedRequest,
-  ProviderAdapter,
+import type { ParsedModelOutput } from './output.js';
+import {
+  defineProviderAdapter,
+  type AdapterCapabilities,
+  type AdapterFormatInput,
+  type AdapterFormattedRequest,
+  type ProviderAdapter,
 } from './types.js';
 
 const ANTHROPIC_CAPABILITIES: AdapterCapabilities = {
@@ -499,3 +500,13 @@ export function createAnthropicAdapter(log?: ILogChannel): ProviderAdapter {
     },
   };
 }
+
+export const anthropicAdapter = defineProviderAdapter({
+  adapterKey: 'anthropic',
+  displayName: 'Anthropic',
+  protocol: 'anthropic-messages',
+  capabilities: ANTHROPIC_CAPABILITIES,
+  create(options) {
+    return createAnthropicAdapter(options?.log);
+  },
+});

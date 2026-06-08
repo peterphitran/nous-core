@@ -10,6 +10,18 @@
       "import": "./dist/index.js",
       "require": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js",
+      "require": "./dist/adapters/index.js",
+      "default": "./dist/adapters/index.js"
+    },
+    "./adapters/output": {
+      "types": "./dist/adapters/output.d.ts",
+      "import": "./dist/adapters/output.js",
+      "require": "./dist/adapters/output.js",
+      "default": "./dist/adapters/output.js"
     }
   },
   "scripts": {

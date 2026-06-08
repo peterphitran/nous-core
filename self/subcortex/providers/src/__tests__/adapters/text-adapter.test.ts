@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createTextAdapter } from '../../../agent-gateway/adapters/text-adapter.js';
-import { parseModelOutput } from '../../../output-parser.js';
+import { createTextAdapter } from '../../adapters/text-adapter.js';
+import { parseModelOutput } from '../../adapters/output.js';
 import type { TraceId } from '@nous/shared';
 
 const TRACE_ID = '550e8400-e29b-41d4-a716-446655440103' as TraceId;
