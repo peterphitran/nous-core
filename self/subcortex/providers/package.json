@@ -40,6 +40,12 @@
       "import": "./dist/provider-definitions.js",
       "require": "./dist/provider-definitions.js",
       "default": "./dist/provider-definitions.js"
+    },
+    "./provider-factories": {
+      "types": "./dist/provider-factories.d.ts",
+      "import": "./dist/provider-factories.js",
+      "require": "./dist/provider-factories.js",
+      "default": "./dist/provider-factories.js"
     }
   },
   "scripts": {

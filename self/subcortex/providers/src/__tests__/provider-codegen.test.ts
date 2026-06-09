@@ -56,6 +56,7 @@ describe('provider aggregate codegen', () => {
       'adapter-modules.generated.ts',
       'provider-adapters.generated.ts',
       'provider-definitions.generated.ts',
+      'provider-factories.generated.ts',
     ]);
 
     for (const fileName of generatedFiles) {

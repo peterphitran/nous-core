@@ -5,6 +5,7 @@ export { AnthropicProvider } from './anthropic-provider.js';
 export * from './adapter-registry.js';
 export * from './provider-adapters.js';
 export * from './provider-definitions.js';
+export * from './provider-factories.js';
 export * from './shared/index.js';
 export { OllamaProvider } from './ollama-provider.js';
 export { ChatCompletionsProvider } from './chat-completions-provider.js';

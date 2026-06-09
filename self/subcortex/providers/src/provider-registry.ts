@@ -26,28 +26,18 @@ import {
   LaneAwareProvider,
   ObservableProvider,
 } from '@nous/subcortex-inference-runtime';
-import { AnthropicProvider } from './anthropic-provider.js';
-import { OllamaProvider } from './ollama-provider.js';
 import { ChatCompletionsProvider } from './chat-completions-provider.js';
 import {
   PROVIDER_DEFINITIONS,
   type ProviderDefinition,
-  type ProviderVendorKey,
 } from './provider-definitions.js';
+import { resolveProviderFactory } from './provider-factories.js';
 
 export interface ProviderRegistryOptions {
   laneRegistry?: InferenceLaneRegistry;
   eventBus?: IEventBus;
   credentialVaultService?: ICredentialVaultService;
 }
-
-type ProviderFactory = (config: ModelProviderConfig, apiKey?: string) => IModelProvider;
-
-const VENDOR_CLASS_MAP: Record<ProviderVendorKey, ProviderFactory> = {
-  anthropic: (config, apiKey) => new AnthropicProvider(config, { apiKey }),
-  openai: (config, apiKey) => new ChatCompletionsProvider(config, { apiKey }),
-  ollama: (config) => new OllamaProvider(config),
-};
 
 export class ProviderRegistry {
   private readonly providers = new Map<string, IModelProvider>();
@@ -259,9 +249,11 @@ export class ProviderRegistry {
       ...baseConfig,
       vendor: resolvedVendor,
     };
-    const providerFactory = VENDOR_CLASS_MAP[resolvedVendor as ProviderVendorKey];
+    const providerFactory = resolveProviderFactory(resolvedVendor);
     const provider = providerFactory
-      ? providerFactory(normalizedConfig, this.resolveRemoteApiKey(normalizedConfig))
+      ? providerFactory.create(normalizedConfig, {
+          apiKey: this.resolveRemoteApiKey(normalizedConfig),
+        })
       : new ChatCompletionsProvider(normalizedConfig, {
           apiKey: this.resolveRemoteApiKey(normalizedConfig),
         });

@@ -6,6 +6,7 @@ import {
   ADAPTER_REGISTRY,
   AnthropicProvider,
   ChatCompletionsProvider,
+  CERTIFIED_PROVIDER_FACTORIES,
   OllamaProvider,
   PROVIDER_DEFINITIONS,
   ProviderRegistry,
@@ -163,6 +164,12 @@ describe('provider definition to adapter to registry pipeline', () => {
       expect(provider.inner).toBeInstanceOf(expectedClassByVendor[definition.vendorKey]);
       expect(provider.getConfig().vendor).toBe(definition.vendorKey);
     }
+  });
+
+  it('aggregates provider factories in the same vendor order as definitions', () => {
+    expect(CERTIFIED_PROVIDER_FACTORIES.map((factory) => factory.vendorKey)).toEqual(
+      PROVIDER_DEFINITIONS.map((definition) => definition.vendorKey),
+    );
   });
 
   it('skips auth-required providers without matching env vars and keeps Ollama credential-free', () => {
