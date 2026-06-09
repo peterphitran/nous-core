@@ -1,4 +1,4 @@
-import { AnthropicProvider } from '../../anthropic-provider.js';
+import { AnthropicProvider } from './implementation.js';
 import type { ProviderFactoryModule } from '../../provider-factories.js';
 
 export const providerFactory = {

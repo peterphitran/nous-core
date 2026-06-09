@@ -14,7 +14,7 @@ import type {
   ProviderId,
 } from '@nous/shared';
 import type { ProviderDefinition } from '../../provider-definitions.js';
-import { TextModelInputSchema } from '../../schemas.js';
+import { TextModelInputSchema } from '../../schemas/text-model-input.js';
 
 const DEFAULT_ENDPOINT = 'https://api.openai.com';
 const DEFAULT_MODEL_ID = 'gpt-4o';

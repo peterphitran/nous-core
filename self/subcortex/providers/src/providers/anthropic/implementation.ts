@@ -7,8 +7,8 @@ import type {
   ModelStreamChunk,
   ProviderId,
 } from '@nous/shared';
-import type { ProviderDefinition } from './provider-definitions.js';
-import { TextModelInputSchema, type TextModelInput } from './schemas.js';
+import type { ProviderDefinition } from '../../provider-definitions.js';
+import { TextModelInputSchema, type TextModelInput } from '../../schemas/text-model-input.js';
 
 const DEFAULT_ENDPOINT = 'https://api.anthropic.com';
 const DEFAULT_MODEL_ID = 'claude-sonnet-4-20250514';

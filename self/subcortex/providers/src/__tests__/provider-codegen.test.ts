@@ -66,6 +66,8 @@ describe('provider aggregate codegen', () => {
       expect(source).not.toContain('../anthropic-provider.js');
       expect(source).not.toContain('../chat-completions-provider.js');
       expect(source).not.toContain('../ollama-provider.js');
+      expect(source).not.toContain('../provider-registry.js');
+      expect(source).not.toContain('../schemas.js');
     }
   });
 });

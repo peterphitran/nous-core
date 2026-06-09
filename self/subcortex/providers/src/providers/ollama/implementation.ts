@@ -15,8 +15,8 @@ import type {
   ProviderId,
   TraceId,
 } from '@nous/shared';
-import type { ProviderDefinition } from './provider-definitions.js';
-import { TextModelInputSchema } from './schemas.js';
+import type { ProviderDefinition } from '../../provider-definitions.js';
+import { TextModelInputSchema } from '../../schemas/text-model-input.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const DEFAULT_MODEL_ID = 'llama3.2';

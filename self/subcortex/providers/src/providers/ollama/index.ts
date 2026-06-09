@@ -4,4 +4,4 @@ export { providerFactory } from './provider.js';
 export {
   isToolCapableModel,
 } from './adapter.js';
-export { OllamaProvider } from '../../ollama-provider.js';
+export { OllamaProvider } from './implementation.js';

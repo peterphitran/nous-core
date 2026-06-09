@@ -1,10 +1,10 @@
 import { ConfigError } from '@nous/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LaneAwareProvider } from '@nous/subcortex-inference-runtime';
-import { AnthropicProvider } from '../anthropic-provider.js';
-import { ChatCompletionsProvider } from '../chat-completions-provider.js';
-import { ProviderRegistry } from '../provider-registry.js';
-import { OllamaProvider } from '../ollama-provider.js';
+import { AnthropicProvider } from '../providers/anthropic/implementation.js';
+import { ChatCompletionsProvider } from '../protocols/openai-api/provider.js';
+import { ProviderRegistry } from '../registry/provider-registry.js';
+import { OllamaProvider } from '../providers/ollama/implementation.js';
 
 afterEach(() => {
   delete process.env.ANTHROPIC_API_KEY;

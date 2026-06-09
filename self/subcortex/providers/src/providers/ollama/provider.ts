@@ -1,4 +1,4 @@
-import { OllamaProvider } from '../../ollama-provider.js';
+import { OllamaProvider } from './implementation.js';
 import type { ProviderFactoryModule } from '../../provider-factories.js';
 
 export const providerFactory = {

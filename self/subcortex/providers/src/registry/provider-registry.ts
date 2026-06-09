@@ -26,12 +26,12 @@ import {
   LaneAwareProvider,
   ObservableProvider,
 } from '@nous/subcortex-inference-runtime';
-import { ChatCompletionsProvider } from './protocols/openai-api/provider.js';
+import { ChatCompletionsProvider } from '../protocols/openai-api/provider.js';
 import {
   PROVIDER_DEFINITIONS,
   type ProviderDefinition,
-} from './provider-definitions.js';
-import { resolveProviderFactory } from './provider-factories.js';
+} from '../provider-definitions.js';
+import { resolveProviderFactory } from '../provider-factories.js';
 
 export interface ProviderRegistryOptions {
   laneRegistry?: InferenceLaneRegistry;
