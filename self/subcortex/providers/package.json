@@ -17,12 +17,6 @@
       "require": "./dist/provider-adapters.js",
       "default": "./dist/provider-adapters.js"
     },
-    "./shared": {
-      "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.js",
-      "require": "./dist/shared/index.js",
-      "default": "./dist/shared/index.js"
-    },
     "./shared/output": {
       "types": "./dist/shared/output.d.ts",
       "import": "./dist/shared/output.js",

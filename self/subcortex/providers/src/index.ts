@@ -6,7 +6,33 @@ export * from './adapter-registry.js';
 export * from './provider-adapters.js';
 export * from './provider-definitions.js';
 export * from './provider-factories.js';
-export * from './shared/index.js';
+export {
+  AdapterCapabilitiesSchema,
+  defineProviderAdapter,
+  ProviderAdapterModuleSchema,
+} from './shared/adapter-types.js';
+export type {
+  AdapterCapabilities,
+  AdapterFormatInput,
+  AdapterFormattedRequest,
+  AdapterRegistry,
+  ProviderAdapter,
+  ProviderAdapterCreateOptions,
+  ProviderAdapterModule,
+} from './shared/adapter-types.js';
+export {
+  detectAndStripNarration,
+  parseModelOutput,
+} from './shared/output.js';
+export type { ParsedModelOutput } from './shared/output.js';
+export {
+  chatCompletionsAdapter,
+  createChatCompletionsAdapter,
+} from './protocols/openai-api/adapter.js';
+export {
+  createTextAdapter,
+  textAdapter,
+} from './shared/text-adapter.js';
 export { OllamaProvider } from './providers/ollama/implementation.js';
 export { ChatCompletionsProvider } from './protocols/openai-api/provider.js';
 export { ProviderRegistry } from './registry/provider-registry.js';
