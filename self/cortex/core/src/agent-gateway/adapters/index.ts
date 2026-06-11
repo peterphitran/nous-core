@@ -21,8 +21,8 @@ export type {
 
 export {
   ADAPTER_MODULES,
-  ADAPTER_REGISTRY,
-  buildAdapterRegistry,
+  ADAPTER_RESOLVER,
+  buildAdapterResolver,
   createAnthropicAdapter,
   createChatCompletionsAdapter,
   createOllamaAdapter,

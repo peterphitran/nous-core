@@ -3,14 +3,14 @@ import type { ProviderId, TraceId } from '@nous/shared';
 import { LaneAwareProvider } from '@nous/subcortex-inference-runtime';
 import {
   ADAPTER_MODULES,
-  ADAPTER_REGISTRY,
+  ADAPTER_RESOLVER,
   AnthropicProvider,
   ChatCompletionsProvider,
   CERTIFIED_PROVIDER_FACTORIES,
   OllamaProvider,
   PROVIDER_DEFINITIONS,
   ProviderRegistry,
-  buildAdapterRegistry,
+  buildAdapterResolver,
   defineProvider,
   defineProviderAdapter,
   resolveProviderDefinition,
@@ -90,7 +90,7 @@ describe('provider definition to adapter to registry pipeline', () => {
 
   it('resolves every provider definition adapter key to a module with the module-object contract', () => {
     for (const definition of PROVIDER_DEFINITIONS) {
-      const module = ADAPTER_REGISTRY.resolveModule(definition.adapterKey);
+      const module = ADAPTER_RESOLVER.resolveModule(definition.adapterKey);
 
       expect(module.adapterKey).toBe(definition.adapterKey);
       expect(module.displayName.length).toBeGreaterThan(0);
@@ -127,7 +127,7 @@ describe('provider definition to adapter to registry pipeline', () => {
     ];
 
     for (const testCase of cases) {
-      const adapter = ADAPTER_REGISTRY.resolveAdapter(testCase.adapterKey);
+      const adapter = ADAPTER_RESOLVER.resolveAdapter(testCase.adapterKey);
       const parsed = adapter.parseResponse(testCase.output, TRACE_ID);
 
       expect(parsed.response).toBe(testCase.expected);
@@ -138,7 +138,7 @@ describe('provider definition to adapter to registry pipeline', () => {
 
   it('keeps adapter parsing no-throw with text fallback for malformed outputs', () => {
     for (const module of ADAPTER_MODULES) {
-      const adapter = ADAPTER_REGISTRY.resolveAdapter(module.adapterKey);
+      const adapter = ADAPTER_RESOLVER.resolveAdapter(module.adapterKey);
 
       expect(() => adapter.parseResponse({ unexpected: true }, TRACE_ID)).not.toThrow();
       expect(adapter.parseResponse({ unexpected: true }, TRACE_ID).contentType).toBe('text');
@@ -218,12 +218,12 @@ describe('provider definition to adapter to registry pipeline', () => {
       },
     });
 
-    const registry = buildAdapterRegistry([...ADAPTER_MODULES, fixtureAdapter] as const);
+    const resolver = buildAdapterResolver([...ADAPTER_MODULES, fixtureAdapter] as const);
 
-    expect(registry.resolveModule('fixture-chat')).toBe(fixtureAdapter);
-    expect(registry.resolveAdapter('fixture-chat').parseResponse('ok', TRACE_ID).response).toBe(
+    expect(resolver.resolveModule('fixture-chat')).toBe(fixtureAdapter);
+    expect(resolver.resolveAdapter('fixture-chat').parseResponse('ok', TRACE_ID).response).toBe(
       'ok',
     );
-    expect(registry.resolveAdapter('missing').capabilities).toEqual(textAdapter.capabilities);
+    expect(resolver.resolveAdapter('missing').capabilities).toEqual(textAdapter.capabilities);
   });
 });

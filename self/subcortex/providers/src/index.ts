@@ -2,7 +2,7 @@
  * @nous/subcortex-providers — Model provider adapters for Nous-OSS.
  */
 export { AnthropicProvider } from './providers/anthropic/implementation.js';
-export * from './adapter-registry.js';
+export * from './adapter-resolver.js';
 export * from './provider-adapters.js';
 export * from './provider-definitions.js';
 export * from './provider-factories.js';

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ADAPTER_MODULES,
-  buildAdapterRegistry,
+  buildAdapterResolver,
   normalizeAdapterKey,
   resolveAdapter,
   resolveAdapterKeyFromConfig,
-} from '../adapter-registry.js';
+} from '../adapter-resolver.js';
 import { defineProviderAdapter } from '../schemas/provider-adapter.js';
 import { textAdapter } from '../shared/text-adapter.js';
 import type { ProviderAdapter } from '../schemas/provider-adapter.js';
@@ -47,7 +47,7 @@ function makeThrowingProvider() {
   };
 }
 
-describe('adapter registry', () => {
+describe('adapter resolver', () => {
   it('aggregates all canonical adapter modules', () => {
     expect(ADAPTER_MODULES.map((module) => module.adapterKey)).toEqual([
       'anthropic',
@@ -113,13 +113,13 @@ describe('adapter registry', () => {
       },
     });
 
-    const registry = buildAdapterRegistry([
+    const resolver = buildAdapterResolver([
       ...ADAPTER_MODULES,
       fixtureModule,
     ] as const);
 
-    expect(registry.resolveModule('fixture-chat')).toBe(fixtureModule);
-    expect(registry.resolveAdapter('fixture-chat')).toBe(testAdapter);
-    expect(registry.resolveAdapter('not-registered').capabilities).toEqual(textAdapter.capabilities);
+    expect(resolver.resolveModule('fixture-chat')).toBe(fixtureModule);
+    expect(resolver.resolveAdapter('fixture-chat')).toBe(testAdapter);
+    expect(resolver.resolveAdapter('not-registered').capabilities).toEqual(textAdapter.capabilities);
   });
 });

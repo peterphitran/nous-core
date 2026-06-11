@@ -21,7 +21,7 @@ type ProviderConfigLike = {
   readonly modelId?: string;
 };
 
-export interface AdapterRegistryInstance<
+export interface AdapterResolverInstance<
   TModules extends readonly ProviderAdapterModule[] = readonly ProviderAdapterModule[],
 > {
   readonly modules: TModules;
@@ -46,9 +46,9 @@ export function normalizeAdapterKey(adapterKey: string | undefined): string {
   return adapterKey;
 }
 
-export function buildAdapterRegistry<const TModules extends readonly ProviderAdapterModule[]>(
+export function buildAdapterResolver<const TModules extends readonly ProviderAdapterModule[]>(
   modules: TModules,
-): AdapterRegistryInstance<TModules> {
+): AdapterResolverInstance<TModules> {
   const moduleByKey = new Map<string, TModules[number]>();
   for (const module of modules) {
     moduleByKey.set(module.adapterKey, module);
@@ -69,13 +69,13 @@ export function buildAdapterRegistry<const TModules extends readonly ProviderAda
   };
 }
 
-export const ADAPTER_REGISTRY = buildAdapterRegistry(ADAPTER_MODULES);
+export const ADAPTER_RESOLVER = buildAdapterResolver(ADAPTER_MODULES);
 
 export function resolveAdapter(
   adapterKey: string | undefined,
   options?: ProviderAdapterCreateOptions,
 ): ProviderAdapter {
-  return ADAPTER_REGISTRY.resolveAdapter(adapterKey, options);
+  return ADAPTER_RESOLVER.resolveAdapter(adapterKey, options);
 }
 
 export function resolveAdapterWithLog(

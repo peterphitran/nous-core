@@ -127,6 +127,6 @@ If the provider uses an existing protocol, prefer reusing the existing adapter k
 
 ## Current Boundaries
 
-The provider definition catalog and adapter module registry are provider-package owned. Shared-server bootstrap consumes the catalog but does not own provider metadata. Provider construction remains explicit: definitions select the vendor path, while concrete provider classes still implement runtime behavior.
+The provider definition catalog and adapter resolver are provider-package owned. Shared-server bootstrap consumes the catalog but does not own provider metadata. Provider construction remains explicit: definitions select the vendor path, while concrete provider classes still implement runtime behavior.
 
 Adding a definition and adapter makes a provider discoverable to the runtime path, but it does not automatically approve the provider for production use. Production additions still need tests, credential review, model-list behavior review when applicable, and documentation updates for any user-facing setup changes.
