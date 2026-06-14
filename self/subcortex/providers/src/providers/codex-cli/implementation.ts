@@ -40,6 +40,8 @@ export interface CodexCliProcessRunnerOptions {
   readonly baseEnv?: Readonly<Record<string, string | undefined>>;
 }
 
+const CODEX_CLI_IGNORE_USER_CONFIG_ARG = '--ignore-user-config';
+
 export const CODEX_CLI_INVOCATION_DEFAULTS: AgentCliInvocationDefaults = {
   command: {
     executable: CODEX_CLI_PROVIDER_DEFINITION.agentCli.command.executable,
@@ -62,12 +64,20 @@ export const CODEX_CLI_AGENT_ADAPTER = createAgentCliProviderAdapter({
 
 export function createCodexCliInvocationDefaults(
   executable: string = CODEX_CLI_PROVIDER_DEFINITION.agentCli.command.executable,
+  options: { readonly ignoreUserConfig?: boolean } = {},
 ): AgentCliInvocationDefaults {
+  const defaultArgs = options.ignoreUserConfig === false
+    ? CODEX_CLI_INVOCATION_DEFAULTS.command.defaultArgs?.filter(
+      (arg) => arg !== CODEX_CLI_IGNORE_USER_CONFIG_ARG,
+    )
+    : CODEX_CLI_INVOCATION_DEFAULTS.command.defaultArgs;
+
   return {
     ...CODEX_CLI_INVOCATION_DEFAULTS,
     command: {
       ...CODEX_CLI_INVOCATION_DEFAULTS.command,
       executable,
+      defaultArgs,
     },
   };
 }
@@ -77,15 +87,18 @@ export class CodexCliProvider implements IModelProvider {
   private readonly runner: AgentCliRunner;
   private readonly runnerOptions: AgentCliRunnerOptions | undefined;
   private readonly agentAdapter: typeof CODEX_CLI_AGENT_ADAPTER;
+  private readonly fallbackAgentAdapter: typeof CODEX_CLI_AGENT_ADAPTER;
 
   constructor(config: ModelProviderConfig, options?: CodexCliProviderOptions) {
     this.config = config;
     this.runner = options?.runner ?? createCodexCliProcessRunner();
     this.runnerOptions = options?.runnerOptions;
+    const executable = options?.executable ?? process.env.CODEX_CLI_BIN ?? process.env.NOUS_CODEX_CLI_BIN;
     this.agentAdapter = createAgentCliProviderAdapter({
-      defaults: createCodexCliInvocationDefaults(
-        options?.executable ?? process.env.CODEX_CLI_BIN ?? process.env.NOUS_CODEX_CLI_BIN,
-      ),
+      defaults: createCodexCliInvocationDefaults(executable),
+    });
+    this.fallbackAgentAdapter = createAgentCliProviderAdapter({
+      defaults: createCodexCliInvocationDefaults(executable, { ignoreUserConfig: false }),
     });
   }
 
@@ -99,7 +112,7 @@ export class CodexCliProvider implements IModelProvider {
     const lastMessage = await createLastMessageTarget();
     const start = Date.now();
     try {
-      const result = await this.agentAdapter.invoke({
+      const invocationInput = {
         args: this.invocationArgs(lastMessage.filePath),
         input: renderTextModelInput(input),
         metadata: {
@@ -109,7 +122,12 @@ export class CodexCliProvider implements IModelProvider {
           traceId: request.traceId,
         },
         runnerOptions: this.mergeRunnerOptions(request),
-      }, runner);
+      };
+      let result = await this.agentAdapter.invoke(invocationInput, runner);
+
+      if (!result.ok && isIgnoreUserConfigUnsupported(result.failure, result.stderr, result.stdout)) {
+        result = await this.fallbackAgentAdapter.invoke(invocationInput, runner);
+      }
 
       if (!result.ok) {
         throw toProviderError(result.failure, result.stderr, result.stdout);
@@ -367,6 +385,29 @@ function renderMessageContent(content: string | readonly unknown[]): string {
   return typeof content === 'string'
     ? content
     : JSON.stringify(content, null, 2);
+}
+
+function isIgnoreUserConfigUnsupported(
+  failure: AgentCliFailure | undefined,
+  stderr?: string,
+  stdout?: string,
+): boolean {
+  const text = [failure?.message, stderr, stdout]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n')
+    .toLowerCase();
+
+  if (!text.includes(CODEX_CLI_IGNORE_USER_CONFIG_ARG)) return false;
+
+  return [
+    'unexpected argument',
+    'unknown option',
+    'unknown argument',
+    'unrecognized option',
+    'unrecognized argument',
+    'unsupported option',
+    'unsupported argument',
+  ].some((marker) => text.includes(marker));
 }
 
 function toProviderError(

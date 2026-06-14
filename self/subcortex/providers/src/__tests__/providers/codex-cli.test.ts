@@ -230,6 +230,46 @@ describe('Codex CLI provider leaf', () => {
     });
   });
 
+  it('retries without --ignore-user-config when the selected Codex CLI rejects the flag', async () => {
+    const runner = createFakeAgentCliRunner([
+      {
+        exitCode: 2,
+        stderr: "error: unexpected argument '--ignore-user-config' found",
+      },
+      {
+        exitCode: 0,
+        stdout: 'fallback ok',
+      },
+    ]);
+    const provider = new CodexCliProvider(createConfig('gpt-5.5'), { runner });
+
+    await expect(provider.invoke({
+      role: 'workers',
+      input: { prompt: 'hello' },
+      traceId: TRACE_ID,
+    })).resolves.toMatchObject({
+      output: 'fallback ok',
+    });
+
+    expect(runner.invocations).toHaveLength(2);
+    expect(runner.invocations[0]?.command.args).toContain('--ignore-user-config');
+    expect(runner.invocations[1]?.command.args).not.toContain('--ignore-user-config');
+    expect(runner.invocations[1]?.command.args).toEqual([
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--sandbox',
+      'read-only',
+      '--color',
+      'never',
+      '--model',
+      'gpt-5.5',
+      '--output-last-message',
+      expect.any(String),
+      '-',
+    ]);
+  });
+
   it('factory passes runner injection through the provider module contract', async () => {
     const runner = createFakeAgentCliRunner([{ exitCode: 0, stdout: 'factory ok' }]);
     const provider = providerFactory.create(createConfig(), {
