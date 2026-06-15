@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -38,10 +38,20 @@ export interface CodexCliProviderOptions {
 
 export interface CodexCliProcessRunnerOptions {
   readonly baseEnv?: Readonly<Record<string, string | undefined>>;
+  readonly commandResolver?: CodexCliCommandResolver;
+  readonly platform?: NodeJS.Platform;
 }
 
 const CODEX_CLI_IGNORE_USER_CONFIG_ARG = '--ignore-user-config';
 const CODEX_CLI_SERVICE_TIER_OVERRIDE_ARGS = ['-c', 'service_tier=fast'] as const;
+const CODEX_CLI_NOUS_BIN_ENV = 'NOUS_CODEX_CLI_BIN';
+const CODEX_CLI_BIN_ENV = 'CODEX_CLI_BIN';
+
+export type CodexCliCommandResolver = (
+  command: string,
+  args: readonly string[],
+  options: { readonly env?: NodeJS.ProcessEnv },
+) => string;
 
 export const CODEX_CLI_INVOCATION_DEFAULTS: AgentCliInvocationDefaults = {
   command: {
@@ -100,7 +110,9 @@ export class CodexCliProvider implements IModelProvider {
     this.config = config;
     this.runner = options?.runner ?? createCodexCliProcessRunner();
     this.runnerOptions = options?.runnerOptions;
-    const executable = options?.executable ?? process.env.CODEX_CLI_BIN ?? process.env.NOUS_CODEX_CLI_BIN;
+    const executable = selectCodexCliExecutable({
+      explicitExecutable: options?.executable,
+    });
     this.agentAdapter = createAgentCliProviderAdapter({
       defaults: createCodexCliInvocationDefaults(executable),
     });
@@ -211,6 +223,87 @@ export class CodexCliProvider implements IModelProvider {
   }
 }
 
+export function selectCodexCliExecutable(
+  options: {
+    readonly explicitExecutable?: string;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+  } = {},
+): string {
+  const env = options.env ?? process.env;
+  return options.explicitExecutable
+    ?? env[CODEX_CLI_NOUS_BIN_ENV]
+    ?? env[CODEX_CLI_BIN_ENV]
+    ?? CODEX_CLI_PROVIDER_DEFINITION.agentCli.command.executable;
+}
+
+export function resolveCodexCliExecutable(
+  executable: string = CODEX_CLI_PROVIDER_DEFINITION.agentCli.command.executable,
+  options: {
+    readonly commandResolver?: CodexCliCommandResolver;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+    readonly platform?: NodeJS.Platform;
+  } = {},
+): string {
+  if (executable !== CODEX_CLI_PROVIDER_DEFINITION.agentCli.command.executable) {
+    return executable;
+  }
+
+  const platform = options.platform ?? process.platform;
+  const candidates = platform === 'win32'
+    ? resolveExecutableCandidates('where.exe', ['codex'], options)
+    : resolveExecutableCandidates('which', ['-a', 'codex'], options);
+  const systemCandidates = candidates.filter((candidate) => !isNodeModulesBinCandidate(candidate));
+
+  if (platform === 'win32') {
+    return systemCandidates.find((candidate) => candidate.toLowerCase().endsWith('.cmd'))
+      ?? systemCandidates[0]
+      ?? executable;
+  }
+
+  return systemCandidates[0] ?? executable;
+}
+
+function resolveExecutableCandidates(
+  command: string,
+  args: readonly string[],
+  options: {
+    readonly commandResolver?: CodexCliCommandResolver;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+  },
+): readonly string[] {
+  const commandResolver = options.commandResolver ?? defaultCommandResolver;
+  try {
+    return commandResolver(command, args, { env: toProcessEnv(options.env) })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function defaultCommandResolver(
+  command: string,
+  args: readonly string[],
+  options: { readonly env?: NodeJS.ProcessEnv },
+): string {
+  return execFileSync(command, [...args], {
+    encoding: 'utf8',
+    env: options.env,
+  });
+}
+
+function isNodeModulesBinCandidate(candidate: string): boolean {
+  return candidate.replace(/\\/g, '/').toLowerCase().includes('/node_modules/.bin/');
+}
+
+function toProcessEnv(env: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv | undefined {
+  if (!env) return undefined;
+  const processEnv: NodeJS.ProcessEnv = {};
+  assignDefinedEnv(processEnv, env);
+  return processEnv;
+}
+
 function addArgsAfterExec(
   args: readonly string[] | undefined,
   argsToAdd: readonly string[],
@@ -275,9 +368,14 @@ function runCodexCliProcessRaw(
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(resolveSpawnExecutable(invocation.command.executable), [...(invocation.command.args ?? [])], {
+      const env = buildProcessEnv(invocation.command.env, runnerOptions, options);
+      child = spawn(resolveSpawnExecutable(invocation.command.executable, {
+        commandResolver: options.commandResolver,
+        env,
+        platform: options.platform,
+      }), [...(invocation.command.args ?? [])], {
         cwd: invocation.command.cwd,
-        env: buildProcessEnv(invocation.command.env, runnerOptions, options),
+        env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         shell: process.platform === 'win32',
@@ -342,8 +440,15 @@ function runCodexCliProcessRaw(
   });
 }
 
-function resolveSpawnExecutable(executable: string): string {
-  return executable;
+function resolveSpawnExecutable(
+  executable: string,
+  options: {
+    readonly commandResolver?: CodexCliCommandResolver;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+    readonly platform?: NodeJS.Platform;
+  },
+): string {
+  return resolveCodexCliExecutable(executable, options);
 }
 
 function buildProcessEnv(

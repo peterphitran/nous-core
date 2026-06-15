@@ -71,7 +71,7 @@ export const CODEX_CLI_PROVIDER_DEFINITION = {
       'Live process execution shells out to the local Codex CLI; tests must inject a fake runner.',
       'Provider output prefers Codex CLI `--output-last-message` so chat receives the final assistant response rather than the execution transcript.',
       'Uses `--ignore-user-config` for deterministic provider execution; if an older Codex CLI rejects that flag, the provider retries once without it and overrides service_tier to fast for that process.',
-      'Set CODEX_CLI_BIN when another codex executable shadows the desired system Codex CLI on PATH.',
+      'Set NOUS_CODEX_CLI_BIN, or CODEX_CLI_BIN, when another codex executable shadows the desired system Codex CLI on PATH; without an override the live runner prefers non-node_modules/.bin candidates when resolving codex.',
       'The endpoint is a local placeholder because provider definitions currently require URLs.',
       'Set a concrete modelId to pass `--model`; the default model uses the Codex CLI profile/config.',
     ],

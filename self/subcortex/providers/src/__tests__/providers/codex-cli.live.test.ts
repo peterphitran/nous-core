@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import type {
   ModelProviderConfig,
@@ -9,6 +8,8 @@ import {
   CODEX_CLI_DEFAULT_MODEL_ID,
   CodexCliProvider,
   createCodexCliProcessRunner,
+  resolveCodexCliExecutable,
+  selectCodexCliExecutable,
 } from '../../providers/codex-cli/index.js';
 import type { AgentCliInvocation, AgentCliRunnerOptions } from '../../protocols/agent-cli/index.js';
 
@@ -36,7 +37,7 @@ describe('Codex CLI provider live BT', () => {
     const liveRunner = createCodexCliProcessRunner();
     const calls: Array<{ invocation: AgentCliInvocation; options?: AgentCliRunnerOptions }> = [];
     const provider = new CodexCliProvider(createConfig(), {
-      executable: resolveLiveCodexExecutable(),
+      executable: resolveCodexCliExecutable(selectCodexCliExecutable()),
       runner: {
         async run(invocation, options) {
           calls.push(options === undefined ? { invocation } : { invocation, options });
@@ -71,26 +72,3 @@ describe('Codex CLI provider live BT', () => {
     expect(String(response.output).trim()).toBe('CODEX_PROVIDER_CHAT_OK');
   }, 180_000);
 });
-
-function resolveLiveCodexExecutable(): string {
-  if (process.env.NOUS_CODEX_CLI_BIN) return process.env.NOUS_CODEX_CLI_BIN;
-  if (process.env.CODEX_CLI_BIN) return process.env.CODEX_CLI_BIN;
-
-  if (process.platform === 'win32') {
-    try {
-      const candidates = execFileSync('where.exe', ['codex'], { encoding: 'utf8' })
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-        .filter((line) => !line.toLowerCase().includes('node_modules\\.bin'));
-
-      return candidates.find((candidate) => candidate.toLowerCase().endsWith('.cmd'))
-        ?? candidates[0]
-        ?? 'codex';
-    } catch {
-      return 'codex';
-    }
-  }
-
-  return 'codex';
-}

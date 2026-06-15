@@ -12,10 +12,13 @@ import {
   CODEX_CLI_DEFAULT_MODEL_ID,
   CODEX_CLI_PROVIDER_DEFINITION,
   CodexCliProvider,
+  type CodexCliCommandResolver,
   createCodexCliAdapter,
   providerDefinition,
   providerFactory,
   renderCodexCliPrompt,
+  resolveCodexCliExecutable,
+  selectCodexCliExecutable,
 } from '../../providers/codex-cli/index.js';
 import { createFakeAgentCliRunner } from '../../protocols/agent-cli/index.js';
 import { AgentCliProviderMetadataSchema } from '../../schemas/provider-definition.js';
@@ -207,6 +210,74 @@ describe('Codex CLI provider leaf', () => {
     const provider = new CodexCliProvider(createConfig());
 
     expect(provider.getConfig().vendor).toBe('codex-cli');
+  });
+
+  it('selects Codex executable overrides deterministically before PATH lookup', () => {
+    expect(selectCodexCliExecutable({
+      explicitExecutable: 'C:\\tools\\codex-explicit.cmd',
+      env: {
+        NOUS_CODEX_CLI_BIN: 'C:\\tools\\codex-nous.cmd',
+        CODEX_CLI_BIN: 'C:\\tools\\codex-generic.cmd',
+      },
+    })).toBe('C:\\tools\\codex-explicit.cmd');
+
+    expect(selectCodexCliExecutable({
+      env: {
+        NOUS_CODEX_CLI_BIN: 'C:\\tools\\codex-nous.cmd',
+        CODEX_CLI_BIN: 'C:\\tools\\codex-generic.cmd',
+      },
+    })).toBe('C:\\tools\\codex-nous.cmd');
+
+    expect(selectCodexCliExecutable({
+      env: {
+        CODEX_CLI_BIN: 'C:\\tools\\codex-generic.cmd',
+      },
+    })).toBe('C:\\tools\\codex-generic.cmd');
+  });
+
+  it('resolves default Windows codex away from workspace node_modules bin candidates', () => {
+    const commandResolver: CodexCliCommandResolver = (command, args) => {
+      expect(command).toBe('where.exe');
+      expect(args).toEqual(['codex']);
+      return [
+        'S:\\Localhost\\Nous\\nous-core\\node_modules\\.bin\\codex.CMD',
+        'C:\\nvm4w\\nodejs\\codex.ps1',
+        'C:\\nvm4w\\nodejs\\codex.cmd',
+      ].join('\r\n');
+    };
+
+    expect(resolveCodexCliExecutable('codex', {
+      commandResolver,
+      platform: 'win32',
+    })).toBe('C:\\nvm4w\\nodejs\\codex.cmd');
+  });
+
+  it('resolves default POSIX codex away from workspace node_modules bin candidates', () => {
+    const commandResolver: CodexCliCommandResolver = (command, args) => {
+      expect(command).toBe('which');
+      expect(args).toEqual(['-a', 'codex']);
+      return [
+        '/repo/node_modules/.bin/codex',
+        '/usr/local/bin/codex',
+      ].join('\n');
+    };
+
+    expect(resolveCodexCliExecutable('codex', {
+      commandResolver,
+      platform: 'linux',
+    })).toBe('/usr/local/bin/codex');
+  });
+
+  it('falls back to bare codex when lookup only finds workspace bin candidates', () => {
+    const commandResolver: CodexCliCommandResolver = () => [
+      'S:\\Localhost\\Nous\\nous-core\\node_modules\\.bin\\codex.CMD',
+      'S:\\Localhost\\Nous\\nous-core\\node_modules\\.bin\\codex.ps1',
+    ].join('\r\n');
+
+    expect(resolveCodexCliExecutable('codex', {
+      commandResolver,
+      platform: 'win32',
+    })).toBe('codex');
   });
 
   it('maps Agent CLI runner failures to provider errors', async () => {

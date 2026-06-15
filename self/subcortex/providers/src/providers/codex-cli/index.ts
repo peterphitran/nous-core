@@ -18,8 +18,11 @@ export {
   CodexCliProvider,
   createCodexCliInvocationDefaults,
   createCodexCliProcessRunner,
+  resolveCodexCliExecutable,
+  selectCodexCliExecutable,
 } from './implementation.js';
 export type {
+  CodexCliCommandResolver,
   CodexCliProcessRunnerOptions,
   CodexCliProviderOptions,
 } from './implementation.js';
