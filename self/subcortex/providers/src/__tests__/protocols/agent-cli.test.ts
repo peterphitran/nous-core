@@ -170,6 +170,53 @@ describe('Agent CLI protocol foundation', () => {
     });
   });
 
+  it('creates provider adapters that stream injected runner events', async () => {
+    const adapter = createAgentCliProviderAdapter({
+      defaults: {
+        command: {
+          executable: 'fake-agent',
+          defaultArgs: ['--headless'],
+        },
+        headless: {
+          supported: true,
+          requiredArgs: ['--json'],
+        },
+        timeout: {
+          defaultMs: 30_000,
+        },
+      },
+    });
+    const finalResult = normalizeAgentCliRunResult({
+      exitCode: 0,
+      stdout: '{"type":"done"}\n',
+    });
+    const runner = createFakeAgentCliRunner([], [[
+      { stream: 'stdout', text: '{"type":"message.delta","delta":"hello"}\n' },
+      { stream: 'system', result: finalResult },
+    ]]);
+
+    const events = [];
+    for await (const event of adapter.stream({
+      args: ['--model', 'agent-test'],
+      input: 'hello',
+    }, runner)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { stream: 'stdout', text: '{"type":"message.delta","delta":"hello"}\n' },
+      { stream: 'system', result: finalResult },
+    ]);
+    expect(runner.streamInvocations[0]).toEqual({
+      command: {
+        executable: 'fake-agent',
+        args: ['--headless', '--json', '--model', 'agent-test'],
+      },
+      input: 'hello',
+      timeoutMs: 30_000,
+    });
+  });
+
   it('passes cancellation and environment policy options through fake runner calls', async () => {
     const adapter = createAgentCliProviderAdapter({
       defaults: {

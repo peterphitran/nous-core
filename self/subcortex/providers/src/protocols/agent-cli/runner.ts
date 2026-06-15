@@ -3,6 +3,7 @@ import {
   type AgentCliInvocation,
   type AgentCliRawResult,
   type AgentCliRunResult,
+  type AgentCliStreamEvent,
 } from './adapter.js';
 
 export const AGENT_CLI_RUNNER_POLICY = {
@@ -35,16 +36,26 @@ export interface AgentCliRunner {
     invocation: AgentCliInvocation,
     options?: AgentCliRunnerOptions,
   ): Promise<AgentCliRunResult>;
+  stream?(
+    invocation: AgentCliInvocation,
+    options?: AgentCliRunnerOptions,
+  ): AsyncIterable<AgentCliStreamEvent>;
 }
 
 export type FakeAgentCliRunnerResult =
   | AgentCliRawResult
   | ((invocation: AgentCliInvocation) => AgentCliRawResult | Promise<AgentCliRawResult>);
 
+export type FakeAgentCliRunnerStreamResult =
+  | readonly AgentCliStreamEvent[]
+  | ((invocation: AgentCliInvocation) => readonly AgentCliStreamEvent[] | Promise<readonly AgentCliStreamEvent[]>);
+
 export interface FakeAgentCliRunner extends AgentCliRunner {
   readonly policy: AgentCliRunnerPolicy;
   readonly invocations: readonly AgentCliInvocation[];
   readonly calls: readonly FakeAgentCliRunnerCall[];
+  readonly streamInvocations: readonly AgentCliInvocation[];
+  readonly streamCalls: readonly FakeAgentCliRunnerCall[];
 }
 
 export interface FakeAgentCliRunnerCall {
@@ -54,10 +65,14 @@ export interface FakeAgentCliRunnerCall {
 
 export function createFakeAgentCliRunner(
   results: readonly FakeAgentCliRunnerResult[] = [{ exitCode: 0 }],
+  streamResults: readonly FakeAgentCliRunnerStreamResult[] = [],
 ): FakeAgentCliRunner {
   const invocations: AgentCliInvocation[] = [];
   const calls: FakeAgentCliRunnerCall[] = [];
+  const streamInvocations: AgentCliInvocation[] = [];
+  const streamCalls: FakeAgentCliRunnerCall[] = [];
   let nextResultIndex = 0;
+  let nextStreamResultIndex = 0;
 
   return {
     policy: AGENT_CLI_RUNNER_POLICY,
@@ -66,6 +81,12 @@ export function createFakeAgentCliRunner(
     },
     get calls() {
       return calls;
+    },
+    get streamInvocations() {
+      return streamInvocations;
+    },
+    get streamCalls() {
+      return streamCalls;
     },
     async run(invocation, options) {
       invocations.push(invocation);
@@ -78,6 +99,26 @@ export function createFakeAgentCliRunner(
         : nextResult;
 
       return normalizeAgentCliRunResult(rawResult);
+    },
+    async *stream(invocation, options) {
+      streamInvocations.push(invocation);
+      streamCalls.push(options === undefined ? { invocation } : { invocation, options });
+      const nextResult = streamResults[nextStreamResultIndex];
+      nextStreamResultIndex += 1;
+
+      if (nextResult === undefined) {
+        const result = await this.run(invocation, options);
+        yield { stream: 'system', result };
+        return;
+      }
+
+      const events = typeof nextResult === 'function'
+        ? await nextResult(invocation)
+        : nextResult;
+
+      for (const event of events) {
+        yield event;
+      }
     },
   };
 }

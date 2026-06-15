@@ -13,7 +13,7 @@ const CODEX_CLI_ADAPTER_CAPABILITIES: AdapterCapabilities = {
   nativeToolUse: false,
   cacheControl: false,
   extendedThinking: false,
-  streaming: false,
+  streaming: true,
 };
 
 export function createCodexCliAdapter(): ProviderAdapter {

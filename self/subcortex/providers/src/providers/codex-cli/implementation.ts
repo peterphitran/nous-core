@@ -18,8 +18,10 @@ import {
   type AgentCliInvocation,
   type AgentCliInvocationDefaults,
   type AgentCliRawResult,
+  type AgentCliRunResult,
   type AgentCliRunner,
   type AgentCliRunnerOptions,
+  type AgentCliStreamEvent,
   normalizeAgentCliRunResult,
 } from '../../protocols/agent-cli/index.js';
 import { TextModelInputSchema, type TextModelInput } from '../../schemas/text-model-input.js';
@@ -172,12 +174,101 @@ export class CodexCliProvider implements IModelProvider {
     }
   }
 
-  async *stream(_request: ModelRequest): AsyncIterable<ModelStreamChunk> {
-    throw new NousError(
-      'Codex CLI provider does not support streaming.',
-      'PROVIDER_UNAVAILABLE',
-      { provider: 'codex-cli', failureKind: 'unsupported' },
-    );
+  async *stream(request: ModelRequest): AsyncIterable<ModelStreamChunk> {
+    const runner = this.runner;
+    const input = this.validateInput(request.input);
+    const lastMessage = await createLastMessageTarget();
+    const state: CodexCliStreamState = {
+      accumulatedContent: '',
+      emittedContent: false,
+      usage: undefined,
+      finalResult: undefined,
+    };
+
+    try {
+      const invocationInput = {
+        args: this.streamingInvocationArgs(lastMessage.filePath),
+        input: renderTextModelInput(input),
+        metadata: {
+          provider: 'codex-cli',
+          providerId: this.config.id,
+          modelId: this.config.modelId,
+          traceId: request.traceId,
+          streamFormat: 'codex-exec-jsonl',
+        },
+        runnerOptions: this.mergeRunnerOptions(request),
+      };
+
+      yield* this.streamAttempt(this.agentAdapter, invocationInput, runner, state);
+
+      if (
+        state.finalResult !== undefined &&
+        !state.finalResult.ok &&
+        !state.emittedContent &&
+        isIgnoreUserConfigUnsupported(
+          state.finalResult.failure,
+          state.finalResult.stderr,
+          state.finalResult.stdout,
+        )
+      ) {
+        clearCodexCliFinalResult(state);
+        yield* this.streamAttempt(this.fallbackAgentAdapter, invocationInput, runner, state);
+        const fallbackResult = getCodexCliFinalResult(state);
+        if (
+          fallbackResult !== undefined &&
+          !fallbackResult.ok &&
+          isServiceTierDefaultUnsupported(
+            fallbackResult.failure,
+            fallbackResult.stderr,
+            fallbackResult.stdout,
+          )
+        ) {
+          throw createServiceTierDefaultError(
+            fallbackResult.failure,
+            fallbackResult.stderr,
+            fallbackResult.stdout,
+          );
+        }
+      }
+
+      if (state.finalResult === undefined) {
+        throw new NousError(
+          'Codex CLI streaming ended without a process result.',
+          'PROVIDER_UNAVAILABLE',
+          { provider: 'codex-cli', failureKind: 'unknown' },
+        );
+      }
+
+      if (!state.finalResult.ok) {
+        throw toProviderError(
+          state.finalResult.failure,
+          state.finalResult.stderr,
+          state.finalResult.stdout,
+        );
+      }
+
+      const finalMessage = await readLastMessage(lastMessage.filePath);
+      if (!state.emittedContent && finalMessage !== undefined) {
+        state.accumulatedContent += finalMessage;
+        state.emittedContent = true;
+        yield { content: finalMessage, done: false };
+      }
+
+      yield {
+        content: '',
+        done: true,
+        ...(state.usage !== undefined ? { usage: state.usage } : {}),
+      };
+    } catch (error) {
+      if (error instanceof NousError) throw error;
+      throw new NousError(
+        `Codex CLI streaming failed: ${error instanceof Error ? error.message : String(error)}`,
+        'PROVIDER_UNAVAILABLE',
+        { provider: 'codex-cli', failureKind: 'unknown' },
+      );
+    } finally {
+      await rm(lastMessage.dirPath, { recursive: true, force: true });
+    }
   }
 
   private validateInput(input: unknown): TextModelInput {
@@ -205,6 +296,56 @@ export class CodexCliProvider implements IModelProvider {
     }
 
     return ['--model', this.config.modelId, ...outputArgs, stdinPromptArg];
+  }
+
+  private streamingInvocationArgs(lastMessagePath: string): readonly string[] {
+    return ['--json', ...this.invocationArgs(lastMessagePath)];
+  }
+
+  private async *streamAttempt(
+    adapter: typeof CODEX_CLI_AGENT_ADAPTER,
+    invocationInput: Parameters<typeof CODEX_CLI_AGENT_ADAPTER.invoke>[0],
+    runner: AgentCliRunner,
+    state: CodexCliStreamState,
+  ): AsyncIterable<ModelStreamChunk> {
+    const parser = new CodexCliJsonStreamParser();
+
+    for await (const event of adapter.stream(invocationInput, runner)) {
+      if (event.stream === 'system') {
+        state.finalResult = event.result;
+        continue;
+      }
+
+      if (event.stream !== 'stdout') continue;
+
+      for (const parsed of parser.push(event.text)) {
+        if (parsed.usage !== undefined) {
+          state.usage = parsed.usage;
+        }
+        if (parsed.content.length > 0) {
+          state.accumulatedContent += parsed.content;
+          state.emittedContent = true;
+          yield {
+            content: parsed.content,
+            done: false,
+          };
+        }
+      }
+    }
+
+    for (const parsed of parser.finish()) {
+      if (parsed.usage !== undefined) {
+        state.usage = parsed.usage;
+      }
+      if (parsed.content.length > 0) {
+        state.accumulatedContent += parsed.content;
+        state.emittedContent = true;
+        yield {
+          content: parsed.content,
+          done: false,
+        };
+      }
+    }
   }
 
   private mergeRunnerOptions(request: ModelRequest): AgentCliRunnerOptions | undefined {
@@ -319,6 +460,204 @@ function addArgsAfterExec(
   ];
 }
 
+interface CodexCliStreamState {
+  accumulatedContent: string;
+  emittedContent: boolean;
+  usage: ModelStreamChunk['usage'];
+  finalResult: AgentCliRunResult | undefined;
+}
+
+interface ParsedCodexCliStreamLine {
+  readonly content: string;
+  readonly usage?: ModelStreamChunk['usage'];
+}
+
+class CodexCliJsonStreamParser {
+  private lineBuffer = '';
+  private readonly snapshots = new Map<string, string>();
+
+  push(chunk: string): ParsedCodexCliStreamLine[] {
+    this.lineBuffer += chunk;
+    const lines = this.lineBuffer.split(/\r?\n/);
+    this.lineBuffer = lines.pop() ?? '';
+    return lines.flatMap((line) => this.parseLine(line));
+  }
+
+  finish(): ParsedCodexCliStreamLine[] {
+    const line = this.lineBuffer;
+    this.lineBuffer = '';
+    return line.trim().length > 0 ? this.parseLine(line) : [];
+  }
+
+  private parseLine(line: string): ParsedCodexCliStreamLine[] {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) return [];
+
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+
+    const content = extractCodexCliContentDelta(event, this.snapshots);
+    const usage = extractCodexCliUsage(event);
+    return [{ content, ...(usage !== undefined ? { usage } : {}) }];
+  }
+}
+
+function extractCodexCliContentDelta(
+  event: unknown,
+  snapshots: Map<string, string>,
+): string {
+  if (!isRecord(event)) return '';
+
+  const type = asString(event.type)?.toLowerCase() ?? '';
+  if (isCodexCliReasoningEvent(type, event)) return '';
+
+  const item = isRecord(event.item) ? event.item : undefined;
+  if (item && isCodexCliAssistantItem(item)) {
+    const text = asString(item.text) ?? asString(item.content) ?? '';
+    const key = asString(item.id) ?? `item:${type}`;
+    return deltaFromSnapshot(snapshots, key, text);
+  }
+
+  const message = isRecord(event.message) ? event.message : undefined;
+  if (message && isCodexCliAssistantMessage(message, type)) {
+    const text = asString(message.text) ?? asString(message.content) ?? '';
+    const key = asString(message.id) ?? `message:${type}`;
+    return deltaFromSnapshot(snapshots, key, text);
+  }
+
+  if (
+    type.includes('delta') &&
+    (isCodexCliKnownAssistantTextType(type) || hasAssistantRole(event))
+  ) {
+    return firstString(
+      event.delta,
+      isRecord(event.delta) ? event.delta.text : undefined,
+      isRecord(event.delta) ? event.delta.content : undefined,
+      event.text,
+      event.content,
+    ) ?? '';
+  }
+
+  if (type === 'agent_message' || type === 'assistant_message') {
+    return firstString(event.text, event.content, event.message) ?? '';
+  }
+
+  if (type === 'message' && hasAssistantRole(event)) {
+    return firstString(event.text, event.content, event.message) ?? '';
+  }
+
+  return '';
+}
+
+function extractCodexCliUsage(event: unknown): ModelStreamChunk['usage'] | undefined {
+  if (!isRecord(event)) return undefined;
+  const source = firstRecord(
+    event.usage,
+    event.token_usage,
+    event.tokenUsage,
+    isRecord(event.metrics) ? event.metrics.usage : undefined,
+  );
+  if (!source) return undefined;
+
+  const inputTokens = firstNumber(
+    source.inputTokens,
+    source.input_tokens,
+    source.promptTokens,
+    source.prompt_tokens,
+  );
+  const outputTokens = firstNumber(
+    source.outputTokens,
+    source.output_tokens,
+    source.completionTokens,
+    source.completion_tokens,
+  );
+
+  return inputTokens === undefined && outputTokens === undefined
+    ? undefined
+    : { inputTokens, outputTokens };
+}
+
+function isCodexCliAssistantItem(item: Record<string, unknown>): boolean {
+  if (hasNonAssistantRole(item)) return false;
+  const itemType = asString(item.type)?.toLowerCase() ?? '';
+  return isCodexCliKnownAssistantTextType(itemType) || hasAssistantRole(item);
+}
+
+function isCodexCliAssistantMessage(
+  message: Record<string, unknown>,
+  eventType: string,
+): boolean {
+  const role = asString(message.role)?.toLowerCase();
+  if (role !== undefined) return role === 'assistant';
+  const messageType = asString(message.type)?.toLowerCase() ?? eventType;
+  return isCodexCliKnownAssistantTextType(messageType);
+}
+
+function isCodexCliKnownAssistantTextType(type: string): boolean {
+  if (type.includes('reasoning') || type.includes('thinking')) return false;
+  return type.includes('assistant') ||
+    type.includes('agent_message') ||
+    type.includes('output_text');
+}
+
+function hasAssistantRole(record: Record<string, unknown>): boolean {
+  return asString(record.role)?.toLowerCase() === 'assistant';
+}
+
+function hasNonAssistantRole(record: Record<string, unknown>): boolean {
+  const role = asString(record.role)?.toLowerCase();
+  return role !== undefined && role !== 'assistant';
+}
+
+function isCodexCliReasoningEvent(type: string, event: Record<string, unknown>): boolean {
+  if (type.includes('reasoning') || type.includes('thinking')) return true;
+  const item = isRecord(event.item) ? event.item : undefined;
+  const itemType = asString(item?.type)?.toLowerCase() ?? '';
+  return itemType.includes('reasoning') || itemType.includes('thinking');
+}
+
+function deltaFromSnapshot(
+  snapshots: Map<string, string>,
+  key: string,
+  text: string,
+): string {
+  const previous = snapshots.get(key) ?? '';
+  snapshots.set(key, text);
+  if (text.length === 0 || text === previous) return '';
+  return text.startsWith(previous) ? text.slice(previous.length) : text;
+}
+
+function firstString(...values: readonly unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === 'string');
+}
+
+function firstNumber(...values: readonly unknown[]): number | undefined {
+  return values.find((value): value is number => typeof value === 'number' && Number.isFinite(value));
+}
+
+function firstRecord(...values: readonly unknown[]): Record<string, unknown> | undefined {
+  return values.find(isRecord);
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function clearCodexCliFinalResult(state: CodexCliStreamState): void {
+  state.finalResult = undefined;
+}
+
+function getCodexCliFinalResult(state: CodexCliStreamState): AgentCliRunResult | undefined {
+  return state.finalResult;
+}
 
 async function createLastMessageTarget(): Promise<{ dirPath: string; filePath: string }> {
   const dirPath = await mkdtemp(join(tmpdir(), 'nous-codex-cli-'));
@@ -348,6 +687,41 @@ export function createCodexCliProcessRunner(
         await runCodexCliProcessRaw(invocation, runnerOptions, options),
       );
     },
+    async *stream(invocation, runnerOptions) {
+      const queue: AgentCliStreamEvent[] = [];
+      let wake: (() => void) | undefined;
+      let completed = false;
+
+      const push = (event: AgentCliStreamEvent): void => {
+        queue.push(event);
+        wake?.();
+        wake = undefined;
+      };
+
+      const waitForEvent = (): Promise<void> => {
+        if (queue.length > 0 || completed) return Promise.resolve();
+        return new Promise((resolve) => {
+          wake = resolve;
+        });
+      };
+
+      void runCodexCliProcessRaw(invocation, runnerOptions, options, (event) => {
+        push(event);
+      }).then((rawResult) => {
+        push({ stream: 'system', result: normalizeAgentCliRunResult(rawResult) });
+      }).finally(() => {
+        completed = true;
+        wake?.();
+        wake = undefined;
+      });
+
+      while (!completed || queue.length > 0) {
+        await waitForEvent();
+        while (queue.length > 0) {
+          yield queue.shift()!;
+        }
+      }
+    },
   };
 }
 
@@ -355,6 +729,7 @@ function runCodexCliProcessRaw(
   invocation: AgentCliInvocation,
   runnerOptions: AgentCliRunnerOptions | undefined,
   options: CodexCliProcessRunnerOptions,
+  onTranscriptEvent?: (event: AgentCliStreamEvent) => void,
 ): Promise<AgentCliRawResult> {
   const startedAt = Date.now();
   if (runnerOptions?.signal?.aborted) {
@@ -404,9 +779,11 @@ function runCodexCliProcessRaw(
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk;
+      onTranscriptEvent?.({ stream: 'stdout', text: chunk, timestamp: new Date().toISOString() });
     });
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
+      onTranscriptEvent?.({ stream: 'stderr', text: chunk, timestamp: new Date().toISOString() });
     });
     child.on('error', (error) => {
       if (settled) return;

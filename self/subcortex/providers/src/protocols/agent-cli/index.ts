@@ -22,6 +22,9 @@ export type {
   AgentCliProviderAdapterConfig,
   AgentCliRawResult,
   AgentCliRunResult,
+  AgentCliStreamEvent,
+  AgentCliStreamResultEvent,
+  AgentCliStreamTranscriptEvent,
   AgentCliTimeoutDefaults,
   AgentCliTranscript,
   AgentCliTranscriptEntry,
@@ -41,4 +44,5 @@ export type {
   FakeAgentCliRunner,
   FakeAgentCliRunnerCall,
   FakeAgentCliRunnerResult,
+  FakeAgentCliRunnerStreamResult,
 } from './runner.js';

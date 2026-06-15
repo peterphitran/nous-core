@@ -71,4 +71,50 @@ describe('Codex CLI provider live BT', () => {
 
     expect(String(response.output).trim()).toBe('CODEX_PROVIDER_CHAT_OK');
   }, 180_000);
+
+  liveIt('streams the local Codex CLI through JSONL events', async () => {
+    const liveRunner = createCodexCliProcessRunner();
+    const calls: Array<{ invocation: AgentCliInvocation; options?: AgentCliRunnerOptions }> = [];
+    const provider = new CodexCliProvider(createConfig(), {
+      executable: resolveCodexCliExecutable(selectCodexCliExecutable()),
+      runner: {
+        async run(invocation, options) {
+          calls.push(options === undefined ? { invocation } : { invocation, options });
+          return liveRunner.run(invocation, options);
+        },
+        stream(invocation, options) {
+          calls.push(options === undefined ? { invocation } : { invocation, options });
+          return liveRunner.stream!(invocation, options);
+        },
+      },
+    });
+
+    let streamed = '';
+    try {
+      for await (const chunk of provider.stream({
+        role: 'workers',
+        input: {
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a live provider streaming smoke test. Do not inspect files. Do not run shell commands.',
+            },
+            {
+              role: 'user',
+              content: 'Reply with exactly: CODEX_PROVIDER_STREAM_OK',
+            },
+          ],
+        },
+        traceId: TRACE_ID,
+      })) {
+        streamed += chunk.content;
+      }
+    } catch (error) {
+      console.error('Codex live BT stream args:', calls.map((call) => call.invocation.command.args));
+      throw error;
+    }
+
+    expect(streamed.trim()).toBe('CODEX_PROVIDER_STREAM_OK');
+    expect(calls[0]?.invocation.command.args).toContain('--json');
+  }, 180_000);
 });

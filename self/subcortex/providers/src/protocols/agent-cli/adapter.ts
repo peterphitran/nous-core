@@ -69,6 +69,20 @@ export interface AgentCliTranscript {
   readonly stderr: string;
 }
 
+export interface AgentCliStreamTranscriptEvent extends AgentCliTranscriptEntry {
+  readonly stream: 'stdout' | 'stderr';
+}
+
+export interface AgentCliStreamResultEvent {
+  readonly stream: 'system';
+  readonly result: AgentCliRunResult;
+  readonly timestamp?: string;
+}
+
+export type AgentCliStreamEvent =
+  | AgentCliStreamTranscriptEvent
+  | AgentCliStreamResultEvent;
+
 export interface AgentCliFailure {
   readonly kind: AgentCliFailureKind;
   readonly message: string;
@@ -123,6 +137,10 @@ export interface AgentCliProviderAdapter {
     input: AgentCliAdapterInput,
     runner: import('./runner.js').AgentCliRunner,
   ): Promise<AgentCliAdapterOutput>;
+  stream(
+    input: AgentCliAdapterInput,
+    runner: import('./runner.js').AgentCliRunner,
+  ): AsyncIterable<AgentCliStreamEvent>;
 }
 
 export interface AgentCliProviderAdapterConfig {
@@ -147,6 +165,15 @@ export function createAgentCliProviderAdapter(
         invocation,
         result,
       };
+    },
+    async *stream(input, runner) {
+      if (typeof runner.stream !== 'function') {
+        throw new Error('Agent CLI runner does not support streaming.');
+      }
+
+      const { runnerOptions, ...invocationOptions } = input;
+      const invocation = createAgentCliInvocation(config.defaults, invocationOptions);
+      yield* runner.stream(invocation, runnerOptions);
     },
   };
 }

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   type GatewayContextFrame,
   type ModelProviderConfig,
-  NousError,
   type ProviderId,
   type ToolDefinition,
   type TraceId,
@@ -20,7 +19,7 @@ import {
   resolveCodexCliExecutable,
   selectCodexCliExecutable,
 } from '../../providers/codex-cli/index.js';
-import { createFakeAgentCliRunner } from '../../protocols/agent-cli/index.js';
+import { createFakeAgentCliRunner, normalizeAgentCliRunResult } from '../../protocols/agent-cli/index.js';
 import { AgentCliProviderMetadataSchema } from '../../schemas/provider-definition.js';
 
 const TRACE_ID = '550e8400-e29b-41d4-a716-446655440177' as TraceId;
@@ -71,6 +70,9 @@ describe('Codex CLI provider leaf', () => {
       adapterKey: 'codex-cli',
       providerClass: 'local_text',
       isLocal: true,
+      capabilities: {
+        streaming: true,
+      },
     });
     expect(AgentCliProviderMetadataSchema.parse(providerDefinition.agentCli))
       .toEqual(providerDefinition.agentCli);
@@ -106,7 +108,7 @@ describe('Codex CLI provider leaf', () => {
   it('exposes a ProviderAdapter module for codex-cli with text-safe parsing', () => {
     const adapter = createCodexCliAdapter();
 
-    expect(adapter.capabilities.streaming).toBe(false);
+    expect(adapter.capabilities.streaming).toBe(true);
     expect(adapter.formatRequest({
       systemPrompt: 'Act as Codex.',
       context: [frame('user', 'Implement the task.')],
@@ -425,19 +427,202 @@ describe('Codex CLI provider leaf', () => {
     expect(result.result.ok).toBe(true);
   });
 
-  it('throws a NousError for unsupported streaming', async () => {
+  it('streams Codex CLI JSONL assistant message snapshots into content chunks', async () => {
+    const finalResult = normalizeAgentCliRunResult({
+      exitCode: 0,
+      stdout: [
+        '{"type":"item.updated","item":{"id":"msg-1","type":"assistant_message","text":"Hel"}}',
+        '{"type":"item.updated","item":{"id":"msg-1","type":"assistant_message","text":"Hello"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":4,"output_tokens":2}}',
+      ].join('\n'),
+    });
+    const runner = createFakeAgentCliRunner([], [[
+      {
+        stream: 'stdout',
+        text: [
+          '{"type":"session.created","session_id":"test"}',
+          '{"type":"item.updated","item":{"id":"msg-1","type":"reasoning","text":"private"}}',
+          '{"type":"item.updated","item":{"id":"msg-1","type":"assistant_message","text":"Hel"}}',
+        ].join('\n') + '\n',
+      },
+      {
+        stream: 'stdout',
+        text: [
+          '{"type":"item.updated","item":{"id":"msg-1","type":"assistant_message","text":"Hello"}}',
+          '{"type":"turn.completed","usage":{"input_tokens":4,"output_tokens":2}}',
+        ].join('\n') + '\n',
+      },
+      { stream: 'system', result: finalResult },
+    ]]);
     const provider = new CodexCliProvider(createConfig(), {
-      runner: createFakeAgentCliRunner(),
+      runner,
     });
 
-    await expect(async () => {
-      for await (const _chunk of provider.stream({
+    const chunks = [];
+    for await (const chunk of provider.stream({
+      role: 'workers',
+      input: { prompt: 'hello' },
+      traceId: TRACE_ID,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { content: 'Hel', done: false },
+      { content: 'lo', done: false },
+      { content: '', done: true, usage: { inputTokens: 4, outputTokens: 2 } },
+    ]);
+    expect(runner.streamInvocations[0]?.command.args).toEqual([
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--sandbox',
+      'read-only',
+      '--color',
+      'never',
+      '--json',
+      '--output-last-message',
+      expect.any(String),
+      '-',
+    ]);
+  });
+
+  it('retries streaming without --ignore-user-config when the selected Codex CLI rejects the flag', async () => {
+    const runner = createFakeAgentCliRunner([], [
+      [
+        {
+          stream: 'system',
+          result: normalizeAgentCliRunResult({
+            exitCode: 2,
+            stderr: "error: unexpected argument '--ignore-user-config' found",
+          }),
+        },
+      ],
+      [
+        { stream: 'stdout', text: '{"type":"message.delta","role":"assistant","delta":"fallback ok"}\n' },
+        {
+          stream: 'system',
+          result: normalizeAgentCliRunResult({
+            exitCode: 0,
+            stdout: '{"type":"message.delta","role":"assistant","delta":"fallback ok"}\n',
+          }),
+        },
+      ],
+    ]);
+    const provider = new CodexCliProvider(createConfig('gpt-5.5'), { runner });
+
+    const chunks = [];
+    for await (const chunk of provider.stream({
         role: 'workers',
         input: { prompt: 'hello' },
         traceId: TRACE_ID,
-      })) {
-        // no chunks expected
-      }
-    }).rejects.toBeInstanceOf(NousError);
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { content: 'fallback ok', done: false },
+      { content: '', done: true },
+    ]);
+    expect(runner.streamInvocations).toHaveLength(2);
+    expect(runner.streamInvocations[0]?.command.args).toContain('--ignore-user-config');
+    expect(runner.streamInvocations[1]?.command.args).not.toContain('--ignore-user-config');
+    expect(runner.streamInvocations[1]?.command.args).toEqual([
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '-c',
+      'service_tier=fast',
+      '--sandbox',
+      'read-only',
+      '--color',
+      'never',
+      '--json',
+      '--model',
+      'gpt-5.5',
+      '--output-last-message',
+      expect.any(String),
+      '-',
+    ]);
+  });
+
+  it('ignores non-assistant Codex CLI message-shaped JSONL events', async () => {
+    const runner = createFakeAgentCliRunner([], [[
+      {
+        stream: 'stdout',
+        text: [
+          '{"type":"item.updated","item":{"id":"user-1","type":"user_message","text":"user text"}}',
+          '{"type":"item.updated","item":{"id":"system-1","type":"system_message","text":"system text"}}',
+          '{"type":"item.updated","item":{"id":"tool-1","type":"tool_message","text":"tool text"}}',
+          '{"type":"message","role":"user","content":"top-level user text"}',
+          '{"type":"message.delta","delta":"ambiguous delta without role"}',
+          '{"type":"message","message":{"id":"msg-1","role":"system","content":"nested system text"}}',
+          '{"type":"message","message":{"id":"msg-2","role":"tool","content":"nested tool text"}}',
+        ].join('\n') + '\n',
+      },
+      {
+        stream: 'system',
+        result: normalizeAgentCliRunResult({
+          exitCode: 0,
+          stdout: '',
+        }),
+      },
+    ]]);
+    const provider = new CodexCliProvider(createConfig(), {
+      runner,
+    });
+
+    const chunks = [];
+    for await (const chunk of provider.stream({
+      role: 'workers',
+      input: { prompt: 'hello' },
+      traceId: TRACE_ID,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { content: '', done: true },
+    ]);
+  });
+
+  it('accepts generic Codex CLI message events only with assistant role', async () => {
+    const runner = createFakeAgentCliRunner([], [[
+      {
+        stream: 'stdout',
+        text: [
+          '{"type":"message","role":"assistant","content":"top-level assistant"}',
+          '{"type":"message.delta","role":"assistant","delta":" delta"}',
+          '{"type":"message","message":{"id":"msg-1","role":"assistant","content":" nested assistant"}}',
+        ].join('\n') + '\n',
+      },
+      {
+        stream: 'system',
+        result: normalizeAgentCliRunResult({
+          exitCode: 0,
+          stdout: '',
+        }),
+      },
+    ]]);
+    const provider = new CodexCliProvider(createConfig(), {
+      runner,
+    });
+
+    const chunks = [];
+    for await (const chunk of provider.stream({
+      role: 'workers',
+      input: { prompt: 'hello' },
+      traceId: TRACE_ID,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { content: 'top-level assistant', done: false },
+      { content: ' delta', done: false },
+      { content: ' nested assistant', done: false },
+      { content: '', done: true },
+    ]);
   });
 });
