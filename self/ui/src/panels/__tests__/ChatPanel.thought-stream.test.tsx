@@ -274,6 +274,22 @@ describe('ChatPanel — Inline Thought Stream', () => {
     expect(screen.queryByTestId('inline-thought-group')).toBeNull()
   })
 
+  it('keeps streaming preview bound to the first trace observed during the active send', () => {
+    renderSendingPanel()
+
+    act(() => {
+      emitEvent('chat:content-chunk', { content: 'own reply', traceId: 'trace-1' })
+      emitEvent('chat:content-chunk', { content: ' other reply', traceId: 'trace-2' })
+      emitEvent('chat:thinking-chunk', { content: ' own thought', traceId: 'trace-1' })
+      emitEvent('chat:thinking-chunk', { content: ' other thought', traceId: 'trace-2' })
+    })
+
+    expect(screen.getByText(/own reply/)).toBeTruthy()
+    expect(screen.getByText(/own thought/)).toBeTruthy()
+    expect(screen.queryByText(/other reply/)).toBeNull()
+    expect(screen.queryByText(/other thought/)).toBeNull()
+  })
+
   it('suppresses memory-write, memory-mutation, escalation PFC decisions (Q5)', () => {
     renderSendingPanel()
 

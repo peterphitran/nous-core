@@ -58,11 +58,12 @@ import {
   parseTaskCompletionRequest,
 } from './lifecycle-hooks.js';
 import { GatewayOutbox } from './outbox.js';
-import { composeSystemPrompt } from './system-prompt-composer.js';
+import { composeFromProfile } from '../gateway-runtime/prompt-composer.js';
+import { resolveAgentProfile } from '../gateway-runtime/prompt-strategy.js';
 import { resolveAdapter, resolveProviderTypeFromConfig } from './adapters/index.js';
 import { isToolErrorPayload } from '../internal-mcp/tool-error-helpers.js';
 import { resolveDispatchParameterPlaceholders } from './placeholder-resolver.js';
-import type { ILogChannel, ModelResponse, ModelStreamChunk } from '@nous/shared';
+import type { ILogChannel, ModelStreamChunk } from '@nous/shared';
 import type { ProviderAdapter } from './adapters/types.js';
 
 /** No-op log channel used when no ILogChannel is provided. */
@@ -275,39 +276,56 @@ export class AgentGateway implements IAgentGateway {
         const tools = await this.config.toolSurface.listTools();
         const provider = await this.resolveProvider(validInput, traceId);
 
-        // Strategy delegation: promptFormatter (harness) or composeSystemPrompt (built-in)
-        let systemPrompt: string | string[];
-        if (this.config.harness?.promptFormatter) {
-          const formatted = this.config.harness.promptFormatter({
-            agentClass: this.agentClass,
-            taskInstructions: validInput.taskInstructions,
-            baseSystemPrompt: this.config.baseSystemPrompt,
-            execution: validInput.execution,
-            tools,
-          });
-          systemPrompt = formatted.systemPrompt;
-        } else {
-          systemPrompt = composeSystemPrompt({
-            agentClass: this.agentClass,
-            taskInstructions: validInput.taskInstructions,
-            baseSystemPrompt: this.config.baseSystemPrompt,
-            execution: validInput.execution,
-            tools,
-          });
-        }
+        const adapter = this.resolveAdapterFromProvider(provider);
+        const providerConfig = provider.getConfig();
+        const providerType = resolveProviderTypeFromConfig(provider);
+        const promptOutput = this.config.harness?.promptFormatter
+          ? this.config.harness.promptFormatter({
+              agentClass: this.agentClass,
+              taskInstructions: validInput.taskInstructions,
+              baseSystemPrompt: this.config.baseSystemPrompt,
+              execution: validInput.execution,
+              tools,
+            })
+          : composeFromProfile(
+              resolveAgentProfile(this.agentClass, providerType),
+              adapter.capabilities,
+              {
+                agentClass: this.agentClass,
+                taskInstructions: validInput.taskInstructions,
+                baseSystemPrompt: this.config.baseSystemPrompt,
+                execution: validInput.execution,
+                tools,
+              },
+            );
+
+        const systemPrompt = promptOutput.systemPrompt;
+        const formattedToolDefinitions = promptOutput.toolDefinitions;
+        const systemPromptText = Array.isArray(systemPrompt)
+          ? systemPrompt.join('\n\n')
+          : systemPrompt;
+        const textListedToolsVisible =
+          tools.length > 0 && systemPromptText.includes('Available Tools:');
+        const modelVisibleToolCount =
+          (formattedToolDefinitions?.length ?? 0) + (textListedToolsVisible ? tools.length : 0);
 
         const correlation = sequencer.snapshot();
 
         // Use adapter.formatRequest() — converts { systemPrompt, context, toolDefinitions }
         // into provider-specific format (Anthropic, OpenAI, Ollama, or text).
-        const adapter = this.resolveAdapterFromProvider(provider);
-        const formatted = adapter.formatRequest({ systemPrompt, context, toolDefinitions: tools });
+        const formatted = adapter.formatRequest({
+          systemPrompt,
+          context,
+          toolDefinitions: formattedToolDefinitions,
+        });
 
         // Extract the last user message from context for logging
         const lastUserFrame = [...context].reverse().find(f => f.role === 'user');
 
         this.log.debug('invoke provider', {
           agentClass: this.agentClass,
+          providerId: providerConfig.id,
+          providerType,
           hasHarness: !!this.config.harness,
           inputKeys: Object.keys(formatted.input),
           userMessage: lastUserFrame?.content?.slice(0, 500) ?? '(no user message)',
@@ -333,7 +351,7 @@ export class AgentGateway implements IAgentGateway {
         const canStreamContent = hasEventBus
           && adapter.capabilities.streaming
           && providerStreamAvailable
-          && (!tools || tools.length === 0);
+          && modelVisibleToolCount === 0;
 
         const canStreamThinking = hasEventBus
           && adapter.capabilities.extendedThinking
@@ -344,10 +362,11 @@ export class AgentGateway implements IAgentGateway {
           providerType: this.cachedAdapterProviderSignature,
           eventBusAvailable: hasEventBus,
           toolCount,
+          modelVisibleToolCount,
           content: {
             adapterStreaming: adapter.capabilities.streaming,
             providerStreamAvailable,
-            blockedByTools: toolCount > 0,
+            blockedByTools: modelVisibleToolCount > 0,
             selected: canStreamContent,
           },
           thinking: {

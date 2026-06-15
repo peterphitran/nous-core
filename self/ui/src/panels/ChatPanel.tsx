@@ -226,12 +226,22 @@ export function ChatPanel(props: ChatPanelProps) {
     // --- Streaming content buffer (progressive rendering) ---
     const [streamingContent, setStreamingContent] = useState('')
     const [streamingThinking, setStreamingThinking] = useState('')
+    const streamingTraceIdRef = useRef<string | null>(null)
+
+    const acceptsStreamingPayload = useCallback((payload: { traceId?: string }) => {
+        if (!payload.traceId) return true
+        if (streamingTraceIdRef.current == null) {
+            streamingTraceIdRef.current = payload.traceId
+            return true
+        }
+        return streamingTraceIdRef.current === payload.traceId
+    }, [])
 
     useEventSubscription({
         channels: ['chat:content-chunk'],
         onEvent: (_channel, payload) => {
-            const p = payload as { content: string }
-            if (p.content) {
+            const p = payload as { content: string; traceId?: string }
+            if (p.content && acceptsStreamingPayload(p)) {
                 setStreamingContent(prev => prev + p.content)
             }
         },
@@ -241,8 +251,8 @@ export function ChatPanel(props: ChatPanelProps) {
     useEventSubscription({
         channels: ['chat:thinking-chunk'],
         onEvent: (_channel, payload) => {
-            const p = payload as { content: string }
-            if (p.content) {
+            const p = payload as { content: string; traceId?: string }
+            if (p.content && acceptsStreamingPayload(p)) {
                 setStreamingThinking(prev => prev + p.content)
             }
         },
@@ -339,6 +349,7 @@ export function ChatPanel(props: ChatPanelProps) {
     // server entry appears.
     const invoke = async (userMsg: string, skipUserAppend = false, answeredOverlayKey: string | null = null) => {
         setSending(true)
+        streamingTraceIdRef.current = null
         onSendStart?.()
 
         let userOverlayKey = answeredOverlayKey
