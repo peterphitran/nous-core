@@ -17,6 +17,14 @@ Nous processes your message through the full execution cycle: Cortex evaluation,
 
 **Phase 1:** Responses are displayed in full after the turn completes. Streaming (token-by-token) is deferred to Phase 2+.
 
+## CLI Provider Sessions
+
+When a chat role is assigned to a CLI-backed provider such as Codex CLI, Nous routes the turn through the runtime CLI session manager. The session manager keys provider lifecycle state to the chat fixture, not to conversation memory.
+
+Project chat sessions include the provider id, fixture role, project id, and chat session id in the provider-session key. System-wide chat sessions include the provider id, fixture role, and chat session id, without a synthetic project id. STM remains the source of conversation history; provider sessions only track lifecycle state such as active, busy, dead, or teardown.
+
+Codex CLI currently declares the `session_bound_command` execution profile. Chat-bound turns reuse the session-keyed provider wrapper, while transient and batch Codex CLI work still uses one-shot `codex exec`. If a chat-bound CLI provider session is lost, the next turn creates a fresh session for the same key. If restart fails, chat surfaces the provider-session error instead of silently switching to one-shot execution.
+
 ## Welcome Message (First Open)
 
 The first time you open the principal chat panel after finishing the first-run wizard, the agent emits a single greeting message. The welcome appears in the chat UI on first chat open regardless of which chat surface you use, is durable across re-mount (closing the chat and reopening it shows the same single welcome, not a duplicate), and is not re-issued once the welcome flag has already been set. The welcome is part of the [first-run experience](/docs/getting-started/first-run) — the wizard configures the agent's identity, then the chat introduces it.

@@ -56,6 +56,14 @@ When you save a model selection, Nous applies the change immediately — the in-
 
 Principal and System model selections are saved separately and restored on startup. When a saved cloud selection is restored, Nous automatically moves out of a strict local-only profile so the remote provider can be routed without hand-editing config.
 
+### Local CLI Providers
+
+Certified CLI-backed providers, such as Codex CLI, are local providers. They use local tool authentication rather than vault-backed API keys, so the corresponding CLI must already be installed and logged in on the machine running Nous.
+
+When a CLI provider is assigned to a chat role, Nous keeps the routing decision separate from the provider lifecycle decision. The model router still selects a provider id; the runtime CLI session manager decides whether the turn is transient one-shot work or chat-bound session work.
+
+Codex CLI currently uses the `session_bound_command` execution profile for chat-bound fixtures. Consecutive turns in the same chat route through a session-keyed wrapper, while transient and batch requests continue to use one-shot `codex exec`. If a chat-bound CLI session cannot be started or restarted, Nous surfaces a provider-session error instead of silently falling back to one-shot behavior.
+
 ## System Health
 
 The health check shows:

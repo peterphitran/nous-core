@@ -100,6 +100,26 @@ ollama pull llama3.2:3b
 - Model selections are applied immediately at runtime. If the selected model spec is invalid or malformed, it is rejected without corrupting provider config — check the configuration panel for error feedback.
 - If the selected model is from a cloud provider, ensure the provider key is still configured and valid.
 
+## CLI Provider Session Restart Fails
+
+**Symptom:** Chat fails with `PROVIDER_SESSION_RESTART_FAILED`, or a local CLI-backed provider fails at the start of a chat turn.
+
+**Meaning:** The selected provider uses the agent-CLI protocol and the runtime could not start or reuse the chat-bound provider session. Nous does not silently fall back to one-shot execution for chat-bound CLI fixtures.
+
+**Fix:**
+- Confirm the provider CLI is installed and runnable from the same environment that starts Nous. For Codex CLI, run `codex --version`.
+- Confirm local CLI authentication is valid. For Codex CLI, run `codex login` outside Nous when needed.
+- If another executable named `codex` shadows the expected one, set `NOUS_CODEX_CLI_BIN` or `CODEX_CLI_BIN` to the desired executable path.
+- Retry the chat turn after fixing the CLI environment. A lost chat-bound session is recreated on the next turn for the same provider/session key.
+
+## Codex CLI Provider Uses One-Shot Outside Chat
+
+**Symptom:** A Codex CLI transient or batch invocation starts a fresh `codex exec` process even though chat uses a session-bound provider path.
+
+**Meaning:** This is expected. Codex CLI currently declares the `session_bound_command` execution profile: chat-bound fixtures route through the runtime CLI session manager, while transient and batch work preserves the one-shot `codex exec` path.
+
+**Fix:** No recovery is needed unless chat-bound turns are also failing. If chat fails, use the `PROVIDER_SESSION_RESTART_FAILED` guidance above.
+
 ## First-Run Loop
 
 **Symptom:** First-run flow keeps appearing.

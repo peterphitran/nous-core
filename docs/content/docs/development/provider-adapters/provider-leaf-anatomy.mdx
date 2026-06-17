@@ -29,8 +29,11 @@ The generator requires `definition.ts`, `adapter.ts`, `provider.ts`, and `index.
 | `vendorKey` | Certified provider identity, such as `anthropic`, `openai`, or `ollama` |
 | `adapterKey` | Adapter implementation key used by resolver/runtime, such as `anthropic`, `chat-completions`, or `ollama` |
 | `protocol` | Wire/API family, such as `anthropic-messages`, `chat-completions`, or `ollama` |
+| `executionCapabilityProfile` | Optional adapter-declared runtime execution profile for CLI-style providers: `one_shot_command`, `session_bound_command`, or `persistent_process` |
 
 A vendor can reuse a shared adapter key when it speaks an existing protocol. OpenAI's `vendorKey` is `openai`, while its adapter key is `chat-completions`.
+
+For agent-CLI providers, lifecycle behavior is contextual. Keep lifecycle fields out of `definition.ts`; declare the adapter's execution capability in `adapter.ts` and let the runtime CLI session manager decide whether a request is transient one-shot work or chat-bound session work.
 
 ## Protocol Decision Table
 

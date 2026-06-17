@@ -416,7 +416,7 @@ providers/
 ├── protocols/                         # Shared protocol adapters and transports
 ├── schemas/                           # Hand-written provider, adapter, and factory contracts
 ├── shared/                            # Shared output helpers and fallback adapters
-└── runtime/                           # ProviderRegistry and inference-runtime composition
+└── runtime/                           # ProviderRegistry, CLI session manager, and inference-runtime composition
 ```
 
 Responsibilities:
@@ -433,6 +433,8 @@ The static typed provider definition catalog is generated directly into `self/su
 `self/subcortex/providers/src/provider-adapters.ts` owns the generated public concrete-adapter export surface, and `provider-factories.ts` owns the generated provider factory catalog. Hand-written provider, adapter, and factory contracts live in `self/subcortex/providers/src/schemas/`; parsed-output helpers and fallback adapters live in `self/subcortex/providers/src/shared/`.
 
 Lane behavior is composed through `@nous/subcortex-inference-runtime` from `self/subcortex/providers/src/runtime/provider-runtime.ts`. The file preserves the public `ProviderRegistry` class name while keeping concurrency, failover, and runtime composition out of individual provider leaves.
+
+Agent-CLI provider lifecycle is composed in `self/subcortex/providers/src/runtime/cli-session-manager.ts`. Chat-bound CLI fixtures receive a session-keyed provider wrapper; transient and batch invocations continue to use the provider's one-shot execution path. The session manager derives keys from provider id, fixture role, chat session id, and project id only for project-scoped chat. It tracks process/session lifecycle state, not chat memory.
 
 No orchestration logic lives here.
 

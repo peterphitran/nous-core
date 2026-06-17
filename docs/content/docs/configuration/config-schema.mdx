@@ -105,12 +105,20 @@ Saved Principal and System model selections are restored into this structure at 
 ```
 
 - **providerClass** (optional): `local_text` | `remote_text` — used for credential segregation and profile boundary.
-- **vendor** (optional): Certified provider vendor key for adapter selection. Known vendor values include `anthropic`, `openai`, and `ollama`; see [Provider Adapters](/docs/development/provider-adapters) for how vendor keys map to provider leaves. Unknown values fall back through the adapter resolver rather than becoming certified vendors.
+- **vendor** (optional): Certified provider vendor key for adapter selection. Known vendor values include `anthropic`, `openai`, `ollama`, and `codex-cli`; see [Provider Adapters](/docs/development/provider-adapters) for how vendor keys map to provider leaves. Unknown values fall back through the adapter resolver rather than becoming certified vendors.
 - **adapterKey** (derived internally): Adapter implementation key resolved from the provider definition, such as `anthropic`, `chat-completions`, or `ollama`. `text` is the fallback adapter key, not a certified provider vendor.
 - **meetsProfiles** (optional): Array of capability profiles (e.g. `review-standard`, `review-implementation`). Router enforces that the selected provider meets the required profile unless Principal override evidence is present.
 - **endpoint** (optional): Use the provider base URL (for example `https://api.openai.com` or `https://api.anthropic.com`), not the full `/v1/chat/completions` path.
 
 Provider types: `text`, `image`, `video`, `vision`, `embedding`, `external-api`.
+
+### Codex CLI Provider
+
+The certified `codex-cli` provider is a local text provider that shells out to the installed Codex CLI. It does not use an API key in `nous-config.json5`; it uses the local Codex CLI login session instead. Install and authenticate Codex outside Nous before assigning this provider to a model role.
+
+For transient and batch work, Codex CLI still runs through the one-shot `codex exec` command path. For chat-bound fixtures, Nous routes the provider through the runtime CLI session manager. The Codex adapter currently declares `session_bound_command`, which means chat turns are mediated by a session-keyed wrapper rather than a strict long-lived process protocol.
+
+The runtime session key is derived from the provider id, chat fixture role, and chat session id. Project-scoped chat also includes `projectId`; system-wide chat omits it. Conversation history remains in Cortex STM, not in provider session state.
 
 ## Agent
 
@@ -218,6 +226,8 @@ These apply to newly created projects.
 | `NOUS_BASIC_AUTH` | Enables basic auth for tRPC (format: `user:password`) |
 | `OPENAI_API_KEY` | Enables the built-in OpenAI remote provider at startup |
 | `ANTHROPIC_API_KEY` | Enables the built-in Anthropic remote provider at startup |
+| `NOUS_CODEX_CLI_BIN` | Overrides the Codex CLI executable used by the certified `codex-cli` provider |
+| `CODEX_CLI_BIN` | Fallback Codex CLI executable override when `NOUS_CODEX_CLI_BIN` is not set |
 | `NOUS_PUBLIC_BASE_URL` | Base URL used in OAuth discovery documents for the public MCP edge (default: `http://localhost:3000`). Set this when deploying behind a non-localhost public endpoint. |
 | `NOUS_PUBLIC_MCP_HOSTED_BINDINGS_JSON` | Seeded hosted public-MCP binding records used to map a public host or user handle onto a hosted tenant runtime. Accepts a JSON object or JSON array of binding records. |
 | `NOUS_PUBLIC_MCP_TUNNEL_SESSIONS_JSON` | Seeded public-MCP tunnel session records used to map a public host or user handle onto a local tunnel runtime. Accepts a JSON object or JSON array of session records. |

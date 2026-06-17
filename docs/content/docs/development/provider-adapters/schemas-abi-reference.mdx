@@ -25,6 +25,7 @@ Definitions are metadata only. They describe identity, protocol, default endpoin
 `src/schemas/provider-adapter.ts` defines:
 
 - `AdapterCapabilities`
+- `AdapterExecutionCapabilityProfileSchema`
 - `AdapterFormatInput`
 - `AdapterFormattedRequest`
 - `ProviderAdapter`
@@ -32,6 +33,16 @@ Definitions are metadata only. They describe identity, protocol, default endpoin
 - `defineProviderAdapter(...)`
 
 Adapters translate canonical prompt/context/tool data into provider request shape and parse provider responses back to `ParsedModelOutput`. `parseResponse(...)` must return a fallback instead of throwing on malformed or surprising provider output.
+
+Adapter modules may also declare `executionCapabilityProfile`:
+
+| Value | Meaning |
+|---|---|
+| `one_shot_command` | Each request is a separate command/process execution. |
+| `session_bound_command` | Chat-bound turns are mediated by the runtime CLI session manager, but the provider does not expose a strict long-lived process protocol. |
+| `persistent_process` | The provider supports a strict long-lived process protocol. |
+
+Keep lifecycle policy out of provider definitions. Definitions describe static provider metadata; adapter execution capability tells the runtime which execution profile the adapter can support.
 
 ## Provider Factory
 
@@ -52,6 +63,7 @@ Factories construct concrete `IModelProvider` instances from runtime model confi
 
 - Definitions are metadata only.
 - Adapters are stateless translators.
+- Adapter execution capability is declared on the adapter module when runtime lifecycle behavior depends on the provider protocol.
 - Provider implementations own network calls and provider-specific error handling.
 - Factories construct providers from runtime config and credentials.
 - `parseResponse(...)` must not throw.
