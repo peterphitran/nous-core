@@ -16,6 +16,7 @@ import {
 import type { NousContext } from '../../context';
 import { router, publicProcedure } from '../trpc';
 import { detectOllama } from '../../ollama-detection';
+import { getOllamaEndpointFromContext } from '../../ollama-config';
 import {
   OLLAMA_WELL_KNOWN_PROVIDER_ID,
   WELL_KNOWN_PROVIDER_IDS,
@@ -391,27 +392,40 @@ function getCachedModels(provider: Provider): AvailableModel[] | null {
   return cloneModels(cached.models);
 }
 
-async function getCloudModelsForProvider(
+function shouldCacheModelDiscovery(definition: ProviderDefinition): boolean {
+  return !definition.isLocal;
+}
+
+async function getDiscoveredModelsForProvider(
   ctx: NousContext,
   provider: Provider,
+  options: { baseUrl?: string } = {},
 ): Promise<AvailableModel[]> {
   try {
     const definition = providerDefinitionFor(provider);
-    const resolved = await ctx.credentialVaultService.resolveForInjection(
-      SYSTEM_APP_ID,
-      vaultKey(provider),
-    );
+    const auth = providerAuth(definition);
+    let apiKey = '';
 
-    if (!resolved?.secretValue) {
-      console.debug(
-        `[nous:preferences] Skipping ${provider} model fetch - no API key configured`,
+    if (auth.required) {
+      const resolved = await ctx.credentialVaultService.resolveForInjection(
+        SYSTEM_APP_ID,
+        vaultKey(provider),
       );
-      return [];
+
+      if (!resolved?.secretValue) {
+        console.debug(
+          `[nous:preferences] Skipping ${provider} model fetch - no API key configured`,
+        );
+        return [];
+      }
+      apiKey = resolved.secretValue;
     }
 
-    const cachedModels = getCachedModels(provider);
-    if (cachedModels) {
-      return cachedModels;
+    if (shouldCacheModelDiscovery(definition as ProviderDefinition)) {
+      const cachedModels = getCachedModels(provider);
+      if (cachedModels) {
+        return cachedModels;
+      }
     }
 
     if (!providerSupportsModelDiscovery(definition as ProviderDefinition)) {
@@ -423,14 +437,16 @@ async function getCloudModelsForProvider(
 
     const result: ProviderModelDiscoveryResult = await fetchProviderModels(
       definition as ProviderDefinition,
-      resolved.secretValue,
+      apiKey,
+      fetch,
+      { baseUrl: options.baseUrl },
     );
     const models = result.models.map((model) => ({
       ...model,
       ...providerMetadataForModel(definition),
     }));
 
-    if (result.cacheable) {
+    if (result.cacheable && shouldCacheModelDiscovery(definition as ProviderDefinition)) {
       modelCache.set(provider, {
         models: cloneModels(models),
         fetchedAt: Date.now(),
@@ -584,27 +600,27 @@ export const preferencesRouter = router({
     }),
 
   getAvailableModels: publicProcedure.query(async ({ ctx }) => {
-    // Get Ollama models
-    const ollamaStatus = await detectOllama();
-    const ollamaModels = ollamaStatus.models.map((m) => ({
-      id: `ollama:${m}`,
-      name: m,
-      provider: 'ollama' as const,
-      providerLabel: providerLabelFor('ollama'),
-      available: ollamaStatus.running,
-      ...providerMetadataForModel(providerDefinitionFor('ollama')),
-    }));
-
-    // Get cloud models from the provider APIs
-    const cloudProviders = apiKeyProviderDefinitions()
+    const ollamaEndpoint = getOllamaEndpointFromContext(ctx);
+    const ollamaStatus = await detectOllama(ollamaEndpoint);
+    const discoverableProviders = PROVIDER_DEFINITIONS
       .filter((definition) => providerSupportsModelDiscovery(definition as ProviderDefinition))
+      .filter((definition) => {
+        if (isApiKeyProviderDefinition(definition)) {
+          return true;
+        }
+        return definition.protocol === 'ollama' && ollamaStatus.running;
+      })
       .map((definition) => definition.vendorKey);
-    const cloudModelResults = await Promise.all(
-      cloudProviders.map((provider) => getCloudModelsForProvider(ctx, provider)),
+    const discoveredModelResults = await Promise.all(
+      discoverableProviders.map((provider) => getDiscoveredModelsForProvider(
+        ctx,
+        provider,
+        provider === 'ollama' ? { baseUrl: ollamaEndpoint } : undefined,
+      )),
     );
-    const cloudModels = cloudModelResults.flat();
+    const discoveredModels = discoveredModelResults.flat();
 
-    return { models: [...ollamaModels, ...cloudModels, ...defaultSelectableModels()] };
+    return { models: [...discoveredModels, ...defaultSelectableModels()] };
   }),
 
   getRoleAssignments: publicProcedure.query(async ({ ctx }) => {

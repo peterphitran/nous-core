@@ -46,6 +46,7 @@ const providerDefinitionsMock = vi.hoisted(() => ({
         'anthropic-version': '2023-06-01',
       },
       modelListEndpoint: '/v1/models',
+      modelListFormat: 'anthropic-models',
       capabilities: { streaming: true, modelListing: true },
       isLocal: false,
     },
@@ -94,6 +95,9 @@ const providerDefinitionsMock = vi.hoisted(() => ({
         required: false,
         purpose: 'api_key',
       },
+      modelListEndpoint: '/v1/models',
+      modelListFormat: 'openai-models',
+      healthCheckEndpoint: '/api/tags',
       capabilities: { streaming: true, modelListing: true },
       isLocal: true,
     },
@@ -118,7 +122,7 @@ const providerDefinitionsMock = vi.hoisted(() => ({
         purpose: 'api_key',
       },
       modelListEndpoint: '/v1/models',
-      chatModelPrefixes: ['gpt-4o', 'gpt-4', 'o1', 'o3', 'o4'],
+      modelListFormat: 'openai-models',
       capabilities: { streaming: true, modelListing: true },
       isLocal: false,
     },
@@ -143,6 +147,7 @@ const providerDefinitionsMock = vi.hoisted(() => ({
         purpose: 'api_key',
       },
       modelListEndpoint: '/v1/models',
+      modelListFormat: 'openai-models',
       healthCheckEndpoint: '/health',
       capabilities: { streaming: true, modelListing: true },
       isLocal: false,
@@ -348,7 +353,7 @@ function createMockContext() {
       credentialVaultService,
       documentStore,
       config: {
-        get: vi.fn(),
+        get: vi.fn(() => ({ providers: [] })),
         update: vi.fn(),
       },
       providerRegistry: {
@@ -1027,7 +1032,7 @@ describe('preferences router', () => {
       ).toBe(false);
     });
 
-    it('filters OpenAI /v1/models to chat-capable families', async () => {
+    it('returns OpenAI /v1/models results without prefix filtering', async () => {
       const { ctx, credentialVaultService } = createMockContext();
       const preferencesRouter = await loadPreferencesRouter();
       const caller = preferencesRouter.createCaller(ctx);
@@ -1081,6 +1086,20 @@ describe('preferences router', () => {
         {
           id: 'openai:o3-mini',
           name: 'o3-mini',
+          provider: 'openai',
+          providerLabel: 'OpenAI',
+          available: true,
+        },
+        {
+          id: 'openai:text-embedding-3-small',
+          name: 'text-embedding-3-small',
+          provider: 'openai',
+          providerLabel: 'OpenAI',
+          available: true,
+        },
+        {
+          id: 'openai:whisper-1',
+          name: 'whisper-1',
           provider: 'openai',
           providerLabel: 'OpenAI',
           available: true,
@@ -1145,7 +1164,7 @@ describe('preferences router', () => {
       ]);
     });
 
-    it('skips providers without keys and keeps Ollama detection unchanged', async () => {
+    it('fetches Ollama models through provider discovery metadata when running', async () => {
       const { ctx } = createMockContext();
       const preferencesRouter = await loadPreferencesRouter();
       const caller = preferencesRouter.createCaller(ctx);
@@ -1159,9 +1178,27 @@ describe('preferences router', () => {
         defaultModel: 'llama3.2:3b',
       });
 
+      fetchMock.mockImplementationOnce(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          expect(input).toBe('http://localhost:11434/v1/models');
+          expect(init).toMatchObject({
+            method: 'GET',
+            headers: {},
+          });
+
+          return jsonResponse({
+            object: 'list',
+            data: [
+              { id: 'llama3.2:3b', object: 'model', owned_by: 'ollama' },
+              { id: 'qwen2.5:7b', object: 'model', owned_by: 'ollama' },
+            ],
+          });
+        },
+      );
+
       const result = await caller.getAvailableModels();
 
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(result.models).toEqual([
         {
           id: 'ollama:llama3.2:3b',
@@ -1170,8 +1207,102 @@ describe('preferences router', () => {
           providerLabel: 'Ollama',
           available: true,
         },
+        {
+          id: 'ollama:qwen2.5:7b',
+          name: 'qwen2.5:7b',
+          provider: 'ollama',
+          providerLabel: 'Ollama',
+          available: true,
+        },
         CODEX_CLI_DEFAULT_MODEL,
       ]);
+    });
+
+    it('uses the configured Ollama endpoint for detection and model discovery', async () => {
+      const { ctx } = createMockContext();
+      ctx.config.get.mockReturnValue({
+        providers: [
+          {
+            id: bootstrapConstants.OLLAMA_WELL_KNOWN_PROVIDER_ID,
+            isLocal: true,
+            endpoint: 'http://configured-ollama:11435',
+          },
+        ],
+      });
+      const preferencesRouter = await loadPreferencesRouter();
+      const caller = preferencesRouter.createCaller(ctx);
+      const fetchMock = vi.mocked(globalThis.fetch);
+
+      detectOllamaMock.mockResolvedValueOnce({
+        installed: true,
+        running: true,
+        state: 'running',
+        models: ['llama3.2:3b'],
+        defaultModel: 'llama3.2:3b',
+      });
+
+      fetchMock.mockImplementationOnce(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          expect(input).toBe('http://configured-ollama:11435/v1/models');
+          expect(init).toMatchObject({
+            method: 'GET',
+            headers: {},
+          });
+
+          return jsonResponse({
+            object: 'list',
+            data: [{ id: 'llama3.2:3b', object: 'model', owned_by: 'ollama' }],
+          });
+        },
+      );
+
+      const result = await caller.getAvailableModels();
+
+      expect(detectOllamaMock).toHaveBeenCalledWith('http://configured-ollama:11435');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.models[0]).toEqual({
+        id: 'ollama:llama3.2:3b',
+        name: 'llama3.2:3b',
+        provider: 'ollama',
+        providerLabel: 'Ollama',
+        available: true,
+      });
+    });
+
+    it('does not cache Ollama model discovery results across local model changes', async () => {
+      const { ctx } = createMockContext();
+      const preferencesRouter = await loadPreferencesRouter();
+      const caller = preferencesRouter.createCaller(ctx);
+      const fetchMock = vi.mocked(globalThis.fetch);
+
+      detectOllamaMock.mockResolvedValue({
+        installed: true,
+        running: true,
+        state: 'running',
+        models: ['llama3.2:3b'],
+        defaultModel: 'llama3.2:3b',
+      });
+
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({
+          object: 'list',
+          data: [{ id: 'llama3.2:3b', object: 'model', owned_by: 'ollama' }],
+        }))
+        .mockResolvedValueOnce(jsonResponse({
+          object: 'list',
+          data: [{ id: 'qwen2.5:7b', object: 'model', owned_by: 'ollama' }],
+        }));
+
+      const first = await caller.getAvailableModels();
+      const second = await caller.getAvailableModels();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(first.models[0]).toEqual(
+        expect.objectContaining({ id: 'ollama:llama3.2:3b' }),
+      );
+      expect(second.models[0]).toEqual(
+        expect.objectContaining({ id: 'ollama:qwen2.5:7b' }),
+      );
     });
 
     it('returns fallback models when the provider API fails', async () => {
@@ -1196,14 +1327,7 @@ describe('preferences router', () => {
       expect(result.models).toEqual([
         {
           id: 'anthropic:claude-sonnet-4-20250514',
-          name: 'Claude Sonnet 4 (cached)',
-          provider: 'anthropic',
-          providerLabel: 'Anthropic',
-          available: false,
-        },
-        {
-          id: 'anthropic:claude-opus-4-20250514',
-          name: 'Claude Opus 4 (cached)',
+          name: 'claude-sonnet-4-20250514 (cached)',
           provider: 'anthropic',
           providerLabel: 'Anthropic',
           available: false,
@@ -1234,9 +1358,40 @@ describe('preferences router', () => {
       expect(result.models).toEqual([
         {
           id: 'openai:gpt-4o',
-          name: 'GPT-4o (cached)',
+          name: 'gpt-4o (cached)',
           provider: 'openai',
           providerLabel: 'OpenAI',
+          available: false,
+        },
+        CODEX_CLI_DEFAULT_MODEL,
+      ]);
+    });
+
+    it('returns the default model fallback for fixture providers', async () => {
+      const { ctx, credentialVaultService } = createMockContext();
+      const preferencesRouter = await loadPreferencesRouter();
+      const caller = preferencesRouter.createCaller(ctx);
+      const fetchMock = vi.mocked(globalThis.fetch);
+
+      await credentialVaultService.store(SYSTEM_APP_ID, {
+        key: vaultKey('fixture'),
+        value: 'fixture-key',
+        credential_type: 'api_key',
+        target_host: 'fixture.example.com',
+        injection_location: 'header',
+        injection_key: 'X-Fixture-Key',
+      });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'upstream' }, 503));
+
+      const result = await caller.getAvailableModels();
+
+      expect(result.models).toEqual([
+        {
+          id: 'fixture:fixture-default',
+          name: 'fixture-default (cached)',
+          provider: 'fixture',
+          providerLabel: 'Fixture AI',
           available: false,
         },
         CODEX_CLI_DEFAULT_MODEL,

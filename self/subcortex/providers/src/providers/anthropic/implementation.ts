@@ -38,6 +38,7 @@ export const ANTHROPIC_PROVIDER_DEFINITION = {
     'anthropic-version': ANTHROPIC_VERSION,
   },
   modelListEndpoint: '/v1/models',
+  modelListFormat: 'anthropic-models',
   capabilities: {
     streaming: true,
     cacheControl: true,

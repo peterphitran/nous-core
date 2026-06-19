@@ -78,6 +78,12 @@ export interface ProviderCapabilityDefinition {
   healthCheck?: boolean;
 }
 
+export const ProviderModelListFormatSchema = z.enum([
+  'anthropic-models',
+  'openai-models',
+]);
+export type ProviderModelListFormat = z.infer<typeof ProviderModelListFormatSchema>;
+
 export const AgentCliAuthRequirementKindSchema = z.enum([
   'none',
   'api_key',
@@ -150,8 +156,8 @@ export const ProviderDefinitionSchema = z.object({
   isLocal: z.boolean(),
   headers: z.record(z.string(), z.string()).optional(),
   modelListEndpoint: z.string().min(1).optional(),
+  modelListFormat: ProviderModelListFormatSchema.optional(),
   healthCheckEndpoint: z.string().min(1).optional(),
-  chatModelPrefixes: z.array(z.string().min(1)).optional(),
   capabilities: ProviderCapabilityDefinitionSchema.optional(),
   executionCapabilityProfile: CliExecutionCapabilityProfileSchema.optional(),
   agentCli: AgentCliProviderMetadataSchema.optional(),
@@ -171,8 +177,8 @@ export interface ProviderDefinition {
   isLocal: boolean;
   headers?: Record<string, string>;
   modelListEndpoint?: string;
+  modelListFormat?: ProviderModelListFormat;
   healthCheckEndpoint?: string;
-  chatModelPrefixes?: string[];
   capabilities?: ProviderCapabilityDefinition;
   executionCapabilityProfile?: CliExecutionCapabilityProfile;
   agentCli?: AgentCliProviderMetadata;

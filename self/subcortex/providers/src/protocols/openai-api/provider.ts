@@ -39,7 +39,7 @@ export const CHAT_COMPLETIONS_PROVIDER_DEFINITION = {
     purpose: 'api_key',
   },
   modelListEndpoint: '/v1/models',
-  chatModelPrefixes: ['gpt-4o', 'gpt-4', 'o1', 'o3', 'o4'],
+  modelListFormat: 'openai-models',
   capabilities: {
     streaming: true,
     nativeToolUse: true,

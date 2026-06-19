@@ -19,6 +19,10 @@ export type ProviderApiKeyTestResult = {
   error: string | null;
 };
 
+export type FetchProviderModelsOptions = {
+  baseUrl?: string;
+};
+
 const AnthropicModelSchema = z.object({
   id: z.string(),
   display_name: z.string(),
@@ -43,64 +47,24 @@ const OpenAIModelsResponseSchema = z.object({
   object: z.string(),
 });
 
-const KNOWN_FALLBACK_MODELS: Record<string, ProviderModelDiscoveryModel[]> = {
-  anthropic: [
-    {
-      id: 'anthropic:claude-sonnet-4-20250514',
-      name: 'Claude Sonnet 4 (cached)',
-      provider: 'anthropic',
-      providerLabel: 'Anthropic',
-      available: false,
-    },
-    {
-      id: 'anthropic:claude-opus-4-20250514',
-      name: 'Claude Opus 4 (cached)',
-      provider: 'anthropic',
-      providerLabel: 'Anthropic',
-      available: false,
-    },
-  ],
-  openai: [
-    {
-      id: 'openai:gpt-4o',
-      name: 'GPT-4o (cached)',
-      provider: 'openai',
-      providerLabel: 'OpenAI',
-      available: false,
-    },
-  ],
-};
-
-function cloneModels(
-  models: ProviderModelDiscoveryModel[],
-): ProviderModelDiscoveryModel[] {
-  return models.map((model) => ({ ...model }));
-}
-
 function fallbackModelsFor(
   definition: ProviderDefinition,
 ): ProviderModelDiscoveryModel[] {
-  const known = KNOWN_FALLBACK_MODELS[definition.vendorKey];
-  if (known) {
-    return cloneModels(known);
-  }
-
-  return [
-    {
-      id: `${definition.vendorKey}:${definition.defaultModelId}`,
-      name: `${definition.defaultModelId} (cached)`,
-      provider: definition.vendorKey,
-      providerLabel: definition.displayName,
-      available: false,
-    },
-  ];
+  return [{
+    id: `${definition.vendorKey}:${definition.defaultModelId}`,
+    name: `${definition.defaultModelId} (cached)`,
+    provider: definition.vendorKey,
+    providerLabel: definition.displayName,
+    available: false,
+  }];
 }
 
 function providerEndpointUrl(
   definition: ProviderDefinition,
   endpoint: string,
+  baseUrl: string = definition.defaultEndpoint,
 ): string {
-  return `${definition.defaultEndpoint.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`;
+  return `${baseUrl.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`;
 }
 
 export function providerAuthHeaders(
@@ -109,6 +73,10 @@ export function providerAuthHeaders(
 ): Record<string, string> {
   const authHeader = definition.auth.header;
   if (!authHeader) {
+    if (!definition.auth.required) {
+      return { ...definition.headers };
+    }
+
     throw new Error(
       `Provider '${definition.vendorKey}' is missing API-key header metadata`,
     );
@@ -122,28 +90,34 @@ export function providerAuthHeaders(
   };
 }
 
-function chatModelIsAllowed(
-  definition: ProviderDefinition,
-  modelId: string,
-): boolean {
-  const prefixes = definition.chatModelPrefixes;
-  if (!prefixes?.length) {
-    return true;
-  }
-
-  return prefixes.some((prefix) => modelId.startsWith(prefix));
-}
-
 export function providerSupportsModelDiscovery(
   definition: ProviderDefinition,
 ): boolean {
   return !!definition.modelListEndpoint;
 }
 
+function modelListFormatFor(
+  definition: ProviderDefinition,
+): ProviderDefinition['modelListFormat'] | null {
+  if (definition.modelListFormat) {
+    return definition.modelListFormat;
+  }
+
+  if (definition.protocol === 'anthropic-messages') {
+    return 'anthropic-models';
+  }
+  if (definition.protocol === 'chat-completions') {
+    return 'openai-models';
+  }
+
+  return null;
+}
+
 export async function fetchProviderModels(
   definition: ProviderDefinition,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
+  options: FetchProviderModelsOptions = {},
 ): Promise<ProviderModelDiscoveryResult> {
   const endpoint = definition.modelListEndpoint;
   if (!endpoint) {
@@ -151,7 +125,7 @@ export async function fetchProviderModels(
   }
 
   try {
-    const url = providerEndpointUrl(definition, endpoint);
+    const url = providerEndpointUrl(definition, endpoint, options.baseUrl);
     const response = await fetchImpl(url, {
       method: 'GET',
       headers: providerAuthHeaders(definition, apiKey),
@@ -167,7 +141,9 @@ export async function fetchProviderModels(
       };
     }
 
-    if (definition.protocol === 'anthropic-messages') {
+    const modelListFormat = modelListFormatFor(definition);
+
+    if (modelListFormat === 'anthropic-models') {
       const parsed = AnthropicModelsResponseSchema.safeParse(await response.json());
       if (!parsed.success) {
         console.warn(
@@ -200,7 +176,7 @@ export async function fetchProviderModels(
       return { models, cacheable: true };
     }
 
-    if (definition.protocol === 'chat-completions') {
+    if (modelListFormat === 'openai-models') {
       const parsed = OpenAIModelsResponseSchema.safeParse(await response.json());
       if (!parsed.success) {
         console.warn(
@@ -213,7 +189,6 @@ export async function fetchProviderModels(
       }
 
       const models = parsed.data.data
-        .filter((model) => chatModelIsAllowed(definition, model.id))
         .map((model) => ({
           id: `${definition.vendorKey}:${model.id}`,
           name: model.id,
@@ -230,7 +205,7 @@ export async function fetchProviderModels(
     }
 
     console.warn(
-      `[nous:preferences] Provider '${definition.vendorKey}' uses unsupported model-list protocol '${definition.protocol}'. Using fallback list.`,
+      `[nous:preferences] Provider '${definition.vendorKey}' uses unsupported model-list format '${definition.modelListFormat ?? definition.protocol}'. Using fallback list.`,
     );
     return {
       models: fallbackModelsFor(definition),
