@@ -35,6 +35,11 @@ const expectedDefinitions = {
     defaultModelId: 'llama-3.3-70b-versatile',
     envVar: 'GROQ_API_KEY',
   },
+  'llama-cpp': {
+    defaultEndpoint: 'http://localhost:8080',
+    defaultModelId: 'llama3.2',
+    envVar: undefined,
+  },
 } as const;
 
 describe('provider definitions catalog', () => {
@@ -43,6 +48,7 @@ describe('provider definitions catalog', () => {
       'anthropic',
       'codex-cli',
       'groq',
+      'llama-cpp',
       'ollama',
       'openai',
     ]);
@@ -82,6 +88,7 @@ describe('provider definitions catalog', () => {
       join('providers', 'codex-cli', 'definition.ts'),
       join('protocols', 'openai-api', 'provider.ts'),
       join('providers', 'ollama', 'implementation.ts'),
+      join('providers', 'llama-cpp', 'definition.ts'),
     ];
     const forbidden = [
       /fetch/,

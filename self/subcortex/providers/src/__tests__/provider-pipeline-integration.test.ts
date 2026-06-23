@@ -54,6 +54,7 @@ describe('provider definition to adapter to registry pipeline', () => {
       'anthropic',
       'codex-cli',
       'groq',
+      'llama-cpp',
       'ollama',
       'openai',
     ]);
@@ -162,6 +163,7 @@ describe('provider definition to adapter to registry pipeline', () => {
     const expectedClassByVendor = {
       anthropic: AnthropicProvider,
       'codex-cli': CodexCliProvider,
+      'llama-cpp': ChatCompletionsProvider,
       openai: ChatCompletionsProvider,
       groq: ChatCompletionsProvider,
       ollama: OllamaProvider,
