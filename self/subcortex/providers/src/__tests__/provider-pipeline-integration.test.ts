@@ -432,4 +432,23 @@ describe('github-copilot-cli — process runner', () => {
     // child process was never spawned.
     expect(result.failure?.message).toBe('Agent CLI invocation aborted before start.');
   });
+
+  it('force-resolves a timed-out run even when the child ignores SIGTERM (never hangs the lane)', async () => {
+    // The child traps SIGTERM and keeps its event loop alive, so a SIGTERM-only
+    // timeout path would hang forever. The runner must escalate to SIGKILL after
+    // the grace period and resolve the call as a timeout.
+    const runner = createGhProcessRunner({ sigtermGraceMs: 200 });
+    const result = await runner.run(
+      {
+        command: {
+          executable: process.execPath,
+          args: ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'],
+        },
+        timeoutMs: 200,
+      },
+      undefined,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failure?.kind).toBe('timeout');
+  });
 });

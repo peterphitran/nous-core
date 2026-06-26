@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import type { ProviderId } from '@nous/shared';
 import { ProviderDefinitionSchema } from '../../schemas/provider-definition.js';
+import { deriveBuiltInProviderId } from '../../provider-identity.js';
 import { AGENT_CLI_PROTOCOL_ID } from '../../protocols/agent-cli/index.js';
 import {
   GITHUB_COPILOT_CLI_PROVIDER_DEFINITION,
@@ -7,10 +9,14 @@ import {
 } from '../../providers/github-copilot-cli/definition.js';
 
 describe('github-copilot-cli definition', () => {
-  it('passes ProviderDefinitionSchema validation', () => {
-    expect(() =>
-      ProviderDefinitionSchema.parse(GITHUB_COPILOT_CLI_PROVIDER_DEFINITION),
-    ).not.toThrow();
+  it('satisfies ProviderDefinitionSchema once hydrated with a derived id', () => {
+    // Leaves do not hand-author wellKnownProviderId; the catalog hydrates a derived
+    // built-in id before the strict runtime schema validates the definition.
+    const hydrated = {
+      ...GITHUB_COPILOT_CLI_PROVIDER_DEFINITION,
+      wellKnownProviderId: deriveBuiltInProviderId('github-copilot-cli') as ProviderId,
+    };
+    expect(() => ProviderDefinitionSchema.parse(hydrated)).not.toThrow();
   });
 
   it('has vendorKey github-copilot-cli', () => {

@@ -145,7 +145,7 @@ export type AgentCliProviderMetadata = z.infer<typeof AgentCliProviderMetadataSc
 export const ProviderDefinitionSchema = z.object({
   vendorKey: ProviderVendorSchema,
   displayName: z.string().min(1),
-  wellKnownProviderId: ProviderIdSchema.optional(),
+  wellKnownProviderId: ProviderIdSchema,
   providerType: ProviderTypeSchema,
   providerClass: ProviderClassSchema,
   protocol: ProviderProtocolSchema,

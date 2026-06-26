@@ -51,9 +51,22 @@ export const GITHUB_COPILOT_CLI_AGENT_ADAPTER = createAgentCliProviderAdapter({
   defaults: GITHUB_COPILOT_CLI_INVOCATION_DEFAULTS,
 });
 
+/**
+ * Grace period after SIGTERM before escalating to SIGKILL and force-resolving a
+ * timed-out invocation. Bounds how long a `gh` process that ignores SIGTERM can
+ * keep the provider lane occupied past its timeout.
+ */
+export const GH_PROCESS_SIGTERM_GRACE_MS = 2_000;
+
 export interface GhProcessRunnerOptions {
   /** Overrides the parent environment used as the base for the child process (testing seam). */
   readonly baseEnv?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Grace period (ms) to wait after SIGTERM before escalating to SIGKILL and
+   * force-resolving a timed-out run. Defaults to GH_PROCESS_SIGTERM_GRACE_MS;
+   * exposed as a testing seam to exercise the escalation path without a long wait.
+   */
+  readonly sigtermGraceMs?: number;
 }
 
 export function createGhProcessRunner(
@@ -109,13 +122,28 @@ function runGhProcessRaw(
     let stderr = '';
     let timedOut = false;
     let settled = false;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timeout = invocation.timeoutMs === undefined
       ? undefined
       : setTimeout(() => {
           timedOut = true;
           child.kill('SIGTERM');
+          // Escalation: if `gh` ignores SIGTERM and never emits close/error, the
+          // promise would hang forever and keep the provider lane occupied. After a
+          // short grace period, force-kill and resolve so a timeout always settles.
+          forceKillTimer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            child.kill('SIGKILL');
+            resolve({ stdout, stderr, timedOut, startedAt, endedAt: Date.now() });
+          }, options.sigtermGraceMs ?? GH_PROCESS_SIGTERM_GRACE_MS);
         }, invocation.timeoutMs);
+
+    const clearTimers = () => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
+    };
 
     if (child.stdout) {
       child.stdout.setEncoding('utf8');
@@ -129,14 +157,14 @@ function runGhProcessRaw(
     child.on('error', (error) => {
       if (settled) return;
       settled = true;
-      if (timeout !== undefined) clearTimeout(timeout);
+      clearTimers();
       resolve({ stdout, stderr, error, timedOut, startedAt, endedAt: Date.now() });
     });
 
     child.on('close', (exitCode, signal) => {
       if (settled) return;
       settled = true;
-      if (timeout !== undefined) clearTimeout(timeout);
+      clearTimers();
       resolve({ exitCode, signal, stdout, stderr, timedOut, startedAt, endedAt: Date.now() });
     });
 
